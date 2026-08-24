@@ -1,0 +1,43 @@
+spring:
+  application:
+    name: audit-log-service
+  datasource:
+    url: ${AUDIT_DB_URL:jdbc:postgresql://localhost:5432/auditlog}
+    username: ${AUDIT_DB_USER:harsha}
+    password: ${AUDIT_DB_PASSWORD:}
+    hikari:
+      pool-name: audit-pool
+      maximum-pool-size: 10
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+  jackson:
+    default-property-inclusion: non_null
+
+server:
+  port: ${AUDIT_PORT:8080}
+  error:
+    include-message: always
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      show-details: when-authorized
+
+audit:
+  payload:
+    max-depth: 8
+    max-leaves: 256
+    max-canonical-bytes: 65536
+    max-string-length: 8192
+  query:
+    default-page-size: 50
+    max-page-size: 200
+
+logging:
+  level:
+    com.auditlog: INFO

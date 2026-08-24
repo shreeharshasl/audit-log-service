@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Suppressions are deliberately narrow: matched by class, method and bug pattern, never by pattern
+  alone. A broad exclusion silently disables the check everywhere it would have mattered.
+
+  Every entry must carry a justification. If one cannot be written honestly, fix the code instead.
+-->
+<FindBugsFilter xmlns="https://github.com/spotbugs/filter/3.0.0">
+
+  <!--
+    PayloadCommitter is given its SecureRandom rather than creating one, so that tests can supply a
+    deterministic source and so that a future deployment can substitute a hardware or FIPS-validated
+    generator. Sharing the caller's instance is the intent, not an accident: SecureRandom is
+    thread-safe and designed to be shared, and it has no defensive copy to make.
+  -->
+  <Match>
+    <Class name="com.auditlog.hashing.PayloadCommitter"/>
+    <Bug pattern="EI_EXPOSE_REP2"/>
+  </Match>
+
+</FindBugsFilter>
