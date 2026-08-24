@@ -1,0 +1,51 @@
+services:
+  postgres:
+    image: postgres:16
+    container_name: auditlog-postgres
+    environment:
+      POSTGRES_DB: auditlog
+      POSTGRES_USER: ${AUDIT_DB_USER:-audit}
+      POSTGRES_PASSWORD: ${AUDIT_DB_PASSWORD:-audit}
+    ports:
+      # Host port is only for psql / local `mvn verify`. The API reaches Postgres
+      # on the compose network as `postgres:5432`. Override if 5432 is already taken:
+      #   POSTGRES_HOST_PORT=5433 docker compose up --build
+      - "${POSTGRES_HOST_PORT:-5432}:5432"
+    volumes:
+      - auditlog-data:/var/lib/postgresql/data
+      - ./docker/postgres/init-databases.sql:/docker-entrypoint-initdb.d/01-init-databases.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d auditlog"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  audit-service:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: audit-service
+    container_name: auditlog-service
+    environment:
+      AUDIT_DB_URL: jdbc:postgresql://postgres:5432/auditlog
+      AUDIT_DB_USER: ${AUDIT_DB_USER:-audit}
+      AUDIT_DB_PASSWORD: ${AUDIT_DB_PASSWORD:-audit}
+      AUDIT_PORT: 8080
+    ports:
+      - "${AUDIT_PORT:-8080}:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  verifier:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: verifier
+    profiles: ["cli"]
+    stdin_open: true
+    tty: true
+
+volumes:
+  auditlog-data:

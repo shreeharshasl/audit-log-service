@@ -9,8 +9,8 @@ Java 21, Spring Boot 3.5, PostgreSQL 16.
 | Area | State |
 | --- | --- |
 | Hashing core (canonical JSON, field commitments, hash chain) | Implemented, 74 tests |
-| Persistence and append path | Not started |
-| Write / query / verify APIs | Not started |
+| Persistence and append path | Implemented |
+| Write / query / verify APIs | Implemented |
 | Retention, redaction, export (Scenario B) | Not started |
 | Compliance reporting (Scenario C) | Not started |
 
@@ -26,6 +26,26 @@ brew install maven postgresql@16
 brew services start postgresql@16
 createdb auditlog
 createdb auditlog_test
+```
+
+## Run with Docker
+
+Postgres, the HTTP API, and the verifier image:
+
+```bash
+docker compose up --build
+```
+
+http://localhost:8080 is the API. If local Postgres or another process already owns 5432 or 8080:
+
+```bash
+POSTGRES_HOST_PORT=5433 AUDIT_PORT=8081 docker compose up --build
+```
+
+The offline verifier is a one-shot CLI, not a long-running service:
+
+```bash
+docker compose run --rm verifier
 ```
 
 ## Build

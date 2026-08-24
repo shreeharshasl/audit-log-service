@@ -1,0 +1,11 @@
+# Integration tests run against a real local PostgreSQL, deliberately not an in-memory
+# substitute: the append path depends on SELECT ... FOR UPDATE and on timestamptz keeping
+# microsecond precision, and H2 would verify neither.
+spring:
+  datasource:
+    url: ${AUDIT_TEST_DB_URL:jdbc:postgresql://localhost:5432/auditlog_test}
+    username: ${AUDIT_DB_USER:${user.name}}
+    password: ${AUDIT_DB_PASSWORD:}
+  flyway:
+    enabled: true
+    locations: classpath:db/migration

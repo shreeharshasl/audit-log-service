@@ -18,4 +18,32 @@
     <Bug pattern="EI_EXPOSE_REP2"/>
   </Match>
 
+  <!--
+    Constructor injection of Spring-managed collaborators. EI_EXPOSE_REP2 fires because the injected
+    types are mutable in principle, but these are container-managed singletons whose whole purpose is
+    to be shared: there is no representation to expose and no defensive copy that would be correct to
+    make. Listed one class at a time so that a genuine mutable field added to any of them still gets
+    reported, rather than excluding the pattern across the module.
+  -->
+  <Match>
+    <Class name="com.auditlog.service.controller.AuditEventController"/>
+    <Bug pattern="EI_EXPOSE_REP2"/>
+  </Match>
+  <Match>
+    <Class name="com.auditlog.service.controller.ChainController"/>
+    <Bug pattern="EI_EXPOSE_REP2"/>
+  </Match>
+  <Match>
+    <Class name="com.auditlog.service.repository.AuditEventRepository"/>
+    <Bug pattern="EI_EXPOSE_REP2"/>
+  </Match>
+  <Match>
+    <Class name="com.auditlog.service.service.AuditEventService"/>
+    <Bug pattern="EI_EXPOSE_REP2"/>
+  </Match>
+  <Match>
+    <Class name="com.auditlog.service.service.ChainVerificationService"/>
+    <Bug pattern="EI_EXPOSE_REP2"/>
+  </Match>
+
 </FindBugsFilter>

@@ -82,6 +82,14 @@
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-failsafe-plugin</artifactId>
+        <configuration>
+          <!--
+            spring-boot:repackage replaces the module artifact with a fat jar whose classes live
+            under BOOT-INF/classes, where component scanning cannot find @SpringBootApplication.
+            Point Failsafe at the plain output directory instead.
+          -->
+          <classesDirectory>${project.build.outputDirectory}</classesDirectory>
+        </configuration>
         <executions>
           <execution>
             <goals>

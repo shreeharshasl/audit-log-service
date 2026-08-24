@@ -1,0 +1,91 @@
+---
+description: Clean architecture layering and structure rules for the audit log service
+alwaysApply: true
+---
+
+# Architecture Guardrails
+
+This project follows **Clean Architecture** in a classic layered form. The hashing
+core is the domain kernel. The HTTP API and JDBC code are adapters around it. Calls
+flow in one direction only:
+
+```
+controller -> service -> repository
+```
+
+A layer never calls back up. A controller never touches a repository directly, and a
+repository never contains business rules.
+
+## Clean Code
+
+- **Names say what they do.** Prefer `append`, `lockChainHead`, `contentHash` over
+  `process`, `handle`, `doWork`. A type's name is its role; do not suffix with `Impl`
+  unless there are two implementations.
+- **One reason to change per class.** A new capability gets a new class, not another
+  method on an existing service. Split `AuditEventService` rather than grow it.
+- **Small methods.** If a method needs a comment to explain a *step*, extract the step.
+  Comments explain *why* a non-obvious constraint exists, never *what* the next line does.
+- **No dead or speculative code.** No commented-out blocks, unused parameters, or
+  types added "for later".
+- **Errors fail visibly.** Do not catch and ignore. Map exceptions to HTTP only in
+  `@ControllerAdvice`. Repositories throw; services translate to domain exceptions.
+- **Immutability by default.** Prefer records. Defensively copy collections in the
+  compact constructor rather than suppressing SpotBugs.
+- **Tests name the guarantee.** `@DisplayName` states the behavior ("an edited payload
+  is detected"), not the method under test.
+
+## Module roles
+
+- **`audit-hashing-core`** — the hashing domain. Pure Java: no Spring, no JDBC, no
+  persistence annotations. The offline verifier depends on this and nothing else, so a
+  recipient runs exactly the bytes the service ran. Keeping it framework-free is a
+  correctness requirement, not a style preference.
+- **`audit-service`** — HTTP API, persistence, verification.
+- **`audit-verifier-cli`** — thin CLI over the hashing core only.
+
+## Package layout in `audit-service`
+
+```
+com.auditlog.service
+├── config/      @ConfigurationProperties, @Bean wiring
+├── controller/  @RestController, @ControllerAdvice
+├── dto/         request/response records used only at the HTTP boundary
+├── exception/   business exceptions mapped to status codes by @ControllerAdvice
+├── model/       internal domain types passed between layers
+├── repository/  JdbcTemplate data access, one class per aggregate
+└── service/     business rules and transaction boundaries
+```
+
+## Rules
+
+- **Responsibility per layer.** Controllers map DTOs and HTTP status codes. Services own
+  business rules and `@Transactional`. Repositories own SQL and row mapping.
+- **DTOs stop at the controller.** Never accept or return a `dto/` type in a service or
+  repository signature; map to `model/` at the boundary.
+- **No framework leakage inward.** `HttpServletRequest` and `ResultSet` never appear
+  outside `controller/` and `repository/` respectively.
+- **Constructor injection only.** No field `@Autowired`.
+- **Hashing lives in `audit-hashing-core`.** Never recompute a hash inline in a controller,
+  service, or repository; call the core.
+- **Every new hash purpose gets a new `DomainTag`.** Existing tag values are frozen.
+- **Canonical payload bytes are stored as `text`, never `jsonb`.** `jsonb` reorders keys and
+  normalizes values, which destroys the exact bytes the commitments were computed over.
+- **Appends serialize on the chain head row.** Take `SELECT ... FOR UPDATE` on
+  `audit_chain_head` before computing a chain hash, or concurrent writers will fork the chain.
+- **Schema changes go through Flyway** in `audit-service/src/main/resources/db/migration`.
+  Never edit an applied migration; add a new one.
+
+## Quality gates
+
+`mvn verify` must pass: unit tests, integration tests, Spotless, SpotBugs, and the JaCoCo
+floor of 90% lines / 85% branches on the hashing core. Never lower a gate to make a build
+pass. Run `mvn spotless:apply` before committing.
+
+SpotBugs suppressions in `config/spotbugs-exclude.xml` must name a specific class and bug
+pattern, never a pattern alone, and must carry a written justification. Prefer fixing the
+code: a record holding a collection should defensively copy in its compact constructor
+rather than be excluded.
+
+Integration tests (`*IT`) need a local PostgreSQL and run against `auditlog_test` under the
+`test` profile. They must not be rewritten to use an in-memory database: the append path
+depends on `SELECT ... FOR UPDATE` and on `timestamptz` microsecond precision.

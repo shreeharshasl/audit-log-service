@@ -1,0 +1,17 @@
+.git
+.cursor
+.idea
+.vscode
+**/.DS_Store
+**/target
+**/*.iml
+**/*.log
+docs
+exports
+out
+keys
+.env
+.env.local
+agent-transcripts
+dependency-check-report.*
+dependency-reduced-pom.xml
