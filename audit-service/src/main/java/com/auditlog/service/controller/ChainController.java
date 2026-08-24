@@ -10,7 +10,7 @@ import com.auditlog.service.service.AuditEventService;
 import com.auditlog.service.service.ChainVerificationService;
 
 @RestController
-@RequestMapping("/api/v1/chain")
+@RequestMapping("/v1/chain")
 public class ChainController {
 
     private final ChainVerificationService verificationService;

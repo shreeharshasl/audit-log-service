@@ -35,6 +35,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 @ActiveProfiles("test")
 class AuditLogIT {
 
+    private static final String CONTEXT = "/audit-service/api";
+
     @Autowired
     private MockMvc mockMvc;
 
@@ -53,15 +55,15 @@ class AuditLogIT {
     @Test
     @DisplayName("the root path describes how to use the service")
     void rootDescribesTheService() throws Exception {
-        String body = mockMvc.perform(get("/"))
+        String body = mockMvc.perform(apiGet("/"))
                 .andExpect(status().isOk())
                 .andReturn()
                 .getResponse()
                 .getContentAsString();
         JsonNode json = objectMapper.readTree(body);
         assertThat(json.get("service").asText()).isEqualTo("audit-log-service");
-        assertThat(json.get("docs").asText()).isEqualTo("/swagger-ui.html");
-        assertThat(json.get("health").asText()).isEqualTo("/actuator/health");
+        assertThat(json.get("docs").asText()).isEqualTo("/audit-service/api/swagger-ui.html");
+        assertThat(json.get("health").asText()).isEqualTo("/audit-service/api/actuator/health");
     }
 
     @Test
@@ -176,7 +178,7 @@ class AuditLogIT {
     @Test
     @DisplayName("missing required fields fail validation before anything is appended")
     void missingFieldsFailValidation() throws Exception {
-        mockMvc.perform(post("/api/v1/audit-events")
+        mockMvc.perform(apiPost("/v1/audit-events")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"actorId\":\"user-1\"}"))
                 .andExpect(status().isBadRequest());
@@ -195,7 +197,7 @@ class AuditLogIT {
     }
 
     private JsonNode fetch(long seq) throws Exception {
-        String response = mockMvc.perform(get("/api/v1/audit-events/{seq}", seq))
+        String response = mockMvc.perform(apiGet("/v1/audit-events/{seq}", seq))
                 .andExpect(status().isOk())
                 .andReturn()
                 .getResponse()
@@ -204,7 +206,7 @@ class AuditLogIT {
     }
 
     private JsonNode verifyChain() throws Exception {
-        String response = mockMvc.perform(get("/api/v1/chain/verify"))
+        String response = mockMvc.perform(apiGet("/v1/chain/verify"))
                 .andExpect(status().isOk())
                 .andReturn()
                 .getResponse()
@@ -226,9 +228,17 @@ class AuditLogIT {
                 }
                 """
                         .formatted(idField, actorId, payloadJson);
-        return post("/api/v1/audit-events")
+        return apiPost("/v1/audit-events")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(body);
+    }
+
+    private static MockHttpServletRequestBuilder apiGet(String path, Object... uriVars) {
+        return get(CONTEXT + path, uriVars).contextPath(CONTEXT);
+    }
+
+    private static MockHttpServletRequestBuilder apiPost(String path) {
+        return post(CONTEXT + path).contextPath(CONTEXT);
     }
 
     private static List<String> violationTypesAt(JsonNode result, long seq) {

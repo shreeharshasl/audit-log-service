@@ -16,6 +16,8 @@ spring:
 
 server:
   port: ${AUDIT_PORT:8080}
+  servlet:
+    context-path: /audit-service/api
   error:
     include-message: always
 

@@ -36,7 +36,8 @@ Postgres, the HTTP API, and the verifier image:
 docker compose up --build
 ```
 
-http://localhost:8080 is the API. If local Postgres or another process already owns 5432 or 8080:
+http://localhost:8080/audit-service/api is the API. If local Postgres or another process already owns
+5432 or 8080:
 
 ```bash
 POSTGRES_HOST_PORT=5433 AUDIT_PORT=8081 docker compose up --build

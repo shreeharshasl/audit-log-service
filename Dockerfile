@@ -26,7 +26,7 @@ RUN apt-get update \
 COPY --from=build /src/audit-service/target/audit-service-*-SNAPSHOT.jar /app/app.jar
 EXPOSE 8080
 HEALTHCHECK --interval=10s --timeout=5s --start-period=40s --retries=12 \
-    CMD curl -fsS http://127.0.0.1:8080/actuator/health
+    CMD curl -fsS http://127.0.0.1:8080/audit-service/api/actuator/health
 ENTRYPOINT ["java", "-jar", "/app/app.jar"]
 
 FROM eclipse-temurin:21-jre AS verifier

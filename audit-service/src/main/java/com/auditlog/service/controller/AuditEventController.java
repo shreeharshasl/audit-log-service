@@ -11,6 +11,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
 
 import com.auditlog.service.dto.AppendEventRequest;
 import com.auditlog.service.dto.AppendEventResponse;
@@ -20,7 +21,7 @@ import com.auditlog.service.model.NewAuditEvent;
 import com.auditlog.service.service.AuditEventService;
 
 @RestController
-@RequestMapping("/api/v1/audit-events")
+@RequestMapping("/v1/audit-events")
 public class AuditEventController {
 
     private final AuditEventService service;
@@ -39,8 +40,11 @@ public class AuditEventController {
                 request.resourceId(),
                 request.occurredAt(),
                 request.payload()));
-        return ResponseEntity.created(URI.create("/api/v1/audit-events/" + record.seq()))
-                .body(AppendEventResponse.from(record));
+        URI location = ServletUriComponentsBuilder.fromCurrentContextPath()
+                .path("/v1/audit-events/{seq}")
+                .buildAndExpand(record.seq())
+                .toUri();
+        return ResponseEntity.created(location).body(AppendEventResponse.from(record));
     }
 
     @GetMapping("/{seq}")
