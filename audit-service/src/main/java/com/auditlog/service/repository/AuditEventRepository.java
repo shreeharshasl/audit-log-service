@@ -2,6 +2,7 @@ package com.auditlog.service.repository;
 
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.List;
@@ -18,6 +19,7 @@ import com.auditlog.hashing.PayloadLeaf.LeafKind;
 import com.auditlog.service.model.AuditEventQuery;
 import com.auditlog.service.model.AuditRecord;
 import com.auditlog.service.model.ChainHead;
+import com.auditlog.service.model.ComplianceReport;
 
 /** SQL and row mapping for the audit log. Contains no business rules. */
 @Repository
@@ -49,7 +51,8 @@ public class AuditEventRepository {
             """
             SELECT seq, event_id, event_type, actor_id, resource_type, resource_id,
                    occurred_at, recorded_at, canonical_payload, payload_root,
-                   content_hash, prev_chain_hash, chain_hash, hash_version
+                   content_hash, prev_chain_hash, chain_hash, hash_version,
+                   archived, archived_at
             FROM audit_event
             """;
 
@@ -166,6 +169,86 @@ public class AuditEventRepository {
         return jdbc.query(SELECT_COMMITMENTS, COMMITMENT_MAPPER, seq);
     }
 
+    public Optional<AuditRecord> lockBySeq(long seq) {
+        return jdbc.query(SELECT_COLUMNS + " WHERE seq = ? FOR UPDATE", RECORD_MAPPER, seq).stream()
+                .findFirst();
+    }
+
+    public void updateCanonicalPayload(long seq, String canonicalPayload) {
+        jdbc.update("UPDATE audit_event SET canonical_payload = ? WHERE seq = ?", canonicalPayload, seq);
+    }
+
+    public void redactCommitment(long seq, String fieldPath) {
+        jdbc.update(
+                """
+                UPDATE audit_field_commitment
+                SET salt_hex = NULL, redacted = true
+                WHERE event_seq = ? AND field_path = ? AND redacted = false
+                """,
+                seq,
+                fieldPath);
+    }
+
+    public void markArchived(long seq, Instant archivedAt) {
+        jdbc.update(
+                "UPDATE audit_event SET archived = true, archived_at = ? WHERE seq = ?",
+                OffsetDateTime.ofInstant(archivedAt, java.time.ZoneOffset.UTC),
+                seq);
+    }
+
+    public List<Long> findSeqsEligibleForArchive(Instant cutoff) {
+        return jdbc.query(
+                """
+                SELECT seq FROM audit_event
+                WHERE archived = false AND recorded_at < ?
+                ORDER BY seq
+                """,
+                (rs, rowNum) -> rs.getLong("seq"),
+                OffsetDateTime.ofInstant(cutoff, java.time.ZoneOffset.UTC));
+    }
+
+    public long countArchived() {
+        Long count = jdbc.queryForObject("SELECT count(*) FROM audit_event WHERE archived = true", Long.class);
+        return count == null ? 0L : count;
+    }
+
+    public long countEligibleUnarchived(Instant cutoff) {
+        Long count = jdbc.queryForObject(
+                "SELECT count(*) FROM audit_event WHERE archived = false AND recorded_at < ?",
+                Long.class,
+                OffsetDateTime.ofInstant(cutoff, java.time.ZoneOffset.UTC));
+        return count == null ? 0L : count;
+    }
+
+    public long countEvents() {
+        Long count = jdbc.queryForObject("SELECT count(*) FROM audit_event", Long.class);
+        return count == null ? 0L : count;
+    }
+
+    public long countRedactedFields() {
+        Long count =
+                jdbc.queryForObject("SELECT count(*) FROM audit_field_commitment WHERE redacted = true", Long.class);
+        return count == null ? 0L : count;
+    }
+
+    public long countEventsWithRedaction() {
+        Long count = jdbc.queryForObject(
+                "SELECT count(DISTINCT event_seq) FROM audit_field_commitment WHERE redacted = true", Long.class);
+        return count == null ? 0L : count;
+    }
+
+    public List<com.auditlog.service.model.ComplianceReport.EventTypeCount> countByEventType() {
+        return jdbc.query(
+                """
+                SELECT event_type, count(*) AS event_count
+                FROM audit_event
+                GROUP BY event_type
+                ORDER BY event_type
+                """,
+                (rs, rowNum) ->
+                        new ComplianceReport.EventTypeCount(rs.getString("event_type"), rs.getLong("event_count")));
+    }
+
     public long latestSeq() {
         Long seq = jdbc.queryForObject("SELECT last_seq FROM audit_chain_head WHERE id = 1", Long.class);
         return seq == null ? 0L : seq;
@@ -186,7 +269,9 @@ public class AuditEventRepository {
             rs.getString("content_hash"),
             rs.getString("prev_chain_hash"),
             rs.getString("chain_hash"),
-            rs.getInt("hash_version"));
+            rs.getInt("hash_version"),
+            rs.getBoolean("archived"),
+            rs.getObject("archived_at", OffsetDateTime.class) == null ? null : instantAt(rs, "archived_at"));
 
     private static final RowMapper<FieldCommitment> COMMITMENT_MAPPER = (rs, rowNum) -> new FieldCommitment(
             rs.getString("field_path"),
@@ -199,7 +284,7 @@ public class AuditEventRepository {
      * Reads a {@code timestamptz} without going through {@code java.sql.Timestamp}, which would
      * reinterpret the value in the JVM default zone and shift the instant that gets hashed.
      */
-    private static java.time.Instant instantAt(ResultSet rs, String column) throws SQLException {
+    private static Instant instantAt(ResultSet rs, String column) throws SQLException {
         return rs.getObject(column, OffsetDateTime.class).toInstant();
     }
 }

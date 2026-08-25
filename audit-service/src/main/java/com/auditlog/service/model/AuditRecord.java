@@ -1,5 +1,7 @@
 package com.auditlog.service.model;
 
+import java.time.Instant;
+
 import com.auditlog.hashing.AuditEventHeader;
 
 /**
@@ -8,6 +10,7 @@ import com.auditlog.hashing.AuditEventHeader;
  *
  * @param canonicalPayload canonical JSON text, stored verbatim so hashes can be recomputed
  * @param previousChainHashHex the predecessor's chain hash, or the genesis value for seq 1
+ * @param archived true once retention has redacted remaining fields in place
  */
 public record AuditRecord(
         long seq,
@@ -17,4 +20,6 @@ public record AuditRecord(
         String contentHashHex,
         String previousChainHashHex,
         String chainHashHex,
-        int hashVersion) {}
+        int hashVersion,
+        boolean archived,
+        Instant archivedAt) {}

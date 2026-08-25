@@ -1,7 +1,9 @@
 # Setup and API guide
 
 This is a tamper-evident, append-only audit log. Callers write events; the service stores them
-with hashes that make later edits detectable. There is no update or delete API.
+with hashes that make later edits detectable. Records are never updated or deleted: privacy
+requests redact fields in place, and retention archives by redacting remaining fields and setting
+`archived`. Both leave the hash chain intact.
 
 Every HTTP path sits under the context root **`/audit-service/api`**.
 
@@ -165,9 +167,17 @@ A typical session is:
    per-field commitments.
 5. **Verify** the chain (`GET .../v1/chain/verify`) to recompute hashes from stored data and
    report tampering.
+6. **Redact** individual payload fields (`POST .../v1/audit-events/{seq}/redactions`) when a
+   privacy request arrives. The chain hashes do not change.
+7. **Archive** records that have left the retention window (`POST .../v1/retention/apply`). This
+   redacts remaining fields in place; it never deletes a row.
+8. **Export** a range (`POST .../v1/exports`) and hand the JSON to the offline verifier.
+9. **Report** (`GET .../v1/compliance/report`) for chain integrity, retention, redaction counts,
+   and volume.
 
-There is no update or delete. Ordering in the chain is `seq`, assigned by the service, not
-`occurredAt` (that field is caller-supplied and untrusted for ordering).
+There is no update or delete of records. Archival is in-place redaction plus an `archived` flag.
+Ordering in the chain is `seq`, assigned by the service, not `occurredAt` (that field is
+caller-supplied and untrusted for ordering).
 
 Payload rules that apply to append:
 
@@ -199,7 +209,7 @@ curl -sS http://localhost:8080/audit-service/api/
 ```
 
 **You get.** JSON with `service`, `health`, `docs`, `appendEvents`, `getEvent`, `listEvents`,
-`verifyChain`.
+`verifyChain`, `redactEvent`, `retentionPolicy`, `createExport`, `complianceReport`.
 
 ---
 
@@ -367,7 +377,7 @@ curl -sS 'http://localhost:8080/audit-service/api/v1/audit-events?limit=2'
 ```
 
 Each item has `seq`, `eventId`, `eventType`, `actorId`, `resourceType`, `resourceId`,
-`occurredAt`, `recordedAt`, `contentHash`, `chainHash`, `hashVersion`.
+`occurredAt`, `recordedAt`, `contentHash`, `chainHash`, `hashVersion`, `archived`.
 
 If `hasMore` is `false`, you are on the last page and `nextBeforeSeq` is omitted.
 
@@ -412,6 +422,8 @@ curl -sS http://localhost:8080/audit-service/api/v1/audit-events/1
 | `payloadRoot` | Hash of all field commitments |
 | `previousChainHash` | Predecessor's `chainHash`, or 64 zero hex digits for `seq` 1 |
 | `commitments[]` | One entry per leaf: `path` (JSON Pointer), `kind`, `salt`, `commitment`, `redacted` |
+| `archived` | `true` after retention has redacted remaining fields in place |
+| `archivedAt` | When it was archived; omitted/`null` otherwise |
 
 **Missing seq.** `404 not_found`, e.g. `/v1/audit-events/9999`.
 
@@ -467,9 +479,128 @@ curl -sS 'http://localhost:8080/audit-service/api/v1/chain/verify?fromSeq=1&toSe
 | `CONTENT_HASH_MISMATCH` | Header fields or payload root no longer hash to the stored content hash |
 | `CHAIN_HASH_MISMATCH` | Stored chain hash does not match predecessor + content |
 | `BROKEN_LINK` | This row's `previousChainHash` is not the previous row's `chainHash` |
-| `SEQUENCE_GAP` | A sequence number is missing (deleted row) |
+| `UNAUTHORIZED_ARCHIVE` | A sequence number is missing. Records can only be archived in place; a deleted row is tampering |
 | `PAYLOAD_ROOT_MISMATCH` | Stored commitments do not reproduce `payloadRoot` |
 | `FIELD_COMMITMENT_INVALID` | A leaf value no longer matches its salted commitment |
+
+---
+
+### 3.8 `POST /v1/audit-events/{seq}/redactions` — redact payload fields
+
+**What it does.** Deletes the value and the salt at each JSON Pointer, keeps the commitment.
+`payloadRoot`, `contentHash`, and every later `chainHash` are unchanged. Redacted fields report as
+`redacted: true` with `salt: null` and are unverifiable, not verified.
+
+A nested object that would become `{}` after the last child is removed is pruned, so the flattener
+does not treat that empty object as a new uncommitted field. Array elements are replaced with
+`null` rather than removed, so later indexes keep their paths.
+
+This endpoint is open (auth is out of scope). In production it must be separately authorized, and
+the call itself should be audited.
+
+**Request body**
+
+| Field | Required | Meaning |
+| --- | --- | --- |
+| `paths` | yes | JSON Pointers, e.g. `["/account/number"]`. A parent path redacts every nested leaf |
+
+```bash
+curl -sS http://localhost:8080/audit-service/api/v1/audit-events/1/redactions \
+  -H 'Content-Type: application/json' \
+  -d '{"paths": ["/account/number"]}'
+```
+
+**Success (`200`).** The updated record, same shape as fetch-by-seq. Chain verify still returns
+`intact: true`.
+
+**Common failures**
+
+| Status | `error` | When |
+| --- | --- | --- |
+| 404 | `not_found` | Sequence does not exist, or the path matches no stored commitment |
+| 409 | `already_redacted` | That path is already redacted |
+| 409 | `event_archived` | The record was archived; remaining fields are already gone |
+| 400 | `invalid_request` | Empty `paths`, or a pointer that is not valid JSON Pointer syntax |
+
+---
+
+### 3.9 `GET` / `PUT /v1/retention/policy` — retention window
+
+**What it does.** Reads or replaces the single-row policy. `retainDays` is the live window;
+records whose `recordedAt` is older than that are eligible for archival. Default is 365.
+
+```bash
+curl -sS http://localhost:8080/audit-service/api/v1/retention/policy
+curl -sS -X PUT http://localhost:8080/audit-service/api/v1/retention/policy \
+  -H 'Content-Type: application/json' \
+  -d '{"retainDays": 90}'
+```
+
+`retainDays` must be between 1 and 36500.
+
+---
+
+### 3.10 `POST /v1/retention/apply` — archive eligible records
+
+**What it does.** For each unarchived record older than the policy window: redacts every remaining
+field, sets `canonicalPayload` to `{}`, sets `archived=true`. Sequence numbers and hashes stay.
+This is the only supported way to forget payload data for retention. `DELETE FROM audit_event` is
+detected as `UNAUTHORIZED_ARCHIVE`.
+
+```bash
+curl -sS -X POST http://localhost:8080/audit-service/api/v1/retention/apply
+```
+
+**Success (`200`).** `{ "archivedCount": 3, "retainDays": 90, "cutoff": "..." }`.
+
+---
+
+### 3.11 `POST /v1/exports` — export a chain slice
+
+**What it does.** Loads `fromSeq`..`toSeq` (inclusive, must be gap-free), hashes an export
+manifest over `(seq, contentHash, chainHash)` with domain tag `0x06`, stores metadata, and
+returns a JSON bundle a recipient can verify without this service.
+
+```bash
+curl -sS http://localhost:8080/audit-service/api/v1/exports \
+  -H 'Content-Type: application/json' \
+  -d '{"fromSeq": 1, "toSeq": 2}' \
+  -o bundle.json
+```
+
+**Success (`201`).** Body is the bundle (save this file) plus `exportId` and `createdAt`.
+`Location` is `GET /v1/exports/{exportId}`, which regenerates the bundle from the live store
+(payloads and salts reflect any later redaction; hashes and the manifest do not change).
+
+A range with a missing sequence returns **`409 incomplete_range`**.
+
+**Offline verification**
+
+```bash
+java -jar audit-verifier-cli/target/audit-verifier.jar bundle.json
+# or
+docker compose run --rm -v "$PWD/bundle.json:/bundle.json:ro" verifier /bundle.json
+```
+
+Exit `0` means the records in the file are internally consistent. Exit `1` lists violations.
+The verifier depends only on `audit-hashing-core`.
+
+---
+
+### 3.12 `GET /v1/compliance/report` — Scenario C
+
+**What it does.** One document covering:
+
+- chain integrity for the whole log
+- retention: eligible unarchived count vs the current policy (`compliant` is true when that count is 0)
+- redaction: how many fields and how many events have at least one redacted field
+- volume: total events and counts by `eventType`
+
+```bash
+curl -sS http://localhost:8080/audit-service/api/v1/compliance/report
+```
+
+Authentication is still out of scope: this endpoint is open.
 
 ---
 
@@ -528,14 +659,23 @@ curl -sS "$BASE/v1/audit-events/1"
 
 # 5. Chain should be intact
 curl -sS "$BASE/v1/chain/verify"
+
+# 6. Redact one field; hashes stay the same
+curl -sS "$BASE/v1/audit-events/1/redactions" -H 'Content-Type: application/json' \
+  -d '{"paths":["/amount"]}'
+
+# 7. Export seq 1-2 and verify offline (after mvn -pl audit-verifier-cli -am package)
+curl -sS "$BASE/v1/exports" -H 'Content-Type: application/json' \
+  -d '{"fromSeq":1,"toSeq":2}' -o bundle.json
+java -jar audit-verifier-cli/target/audit-verifier.jar bundle.json
+
+# 8. Compliance snapshot
+curl -sS "$BASE/v1/compliance/report"
 ```
 
 ---
 
 ## 6. Not implemented yet
 
-- Retention, redaction, and export (Scenario B)
-- Offline bundle verification (`docker compose run --rm verifier` only prints the hash-format version)
 - Signed checkpoints (a rewritten tail can still pass verify)
-- Compliance reporting (Scenario C)
 - Authentication / authorization

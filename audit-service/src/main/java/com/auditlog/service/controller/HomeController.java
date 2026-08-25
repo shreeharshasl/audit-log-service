@@ -20,7 +20,11 @@ public class HomeController {
                 "POST " + root + "/v1/audit-events",
                 "GET " + root + "/v1/audit-events/{seq}",
                 "GET " + root + "/v1/audit-events?beforeSeq=&limit=",
-                "GET " + root + "/v1/chain/verify");
+                "GET " + root + "/v1/chain/verify",
+                "POST " + root + "/v1/audit-events/{seq}/redactions",
+                "GET|PUT " + root + "/v1/retention/policy",
+                "POST " + root + "/v1/exports",
+                "GET " + root + "/v1/compliance/report");
     }
 
     @GetMapping("/")

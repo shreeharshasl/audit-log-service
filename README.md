@@ -8,11 +8,12 @@ Java 21, Spring Boot 3.5, PostgreSQL 16.
 
 | Area | State |
 | --- | --- |
-| Hashing core (canonical JSON, field commitments, hash chain) | Implemented, 74 tests |
+| Hashing core (canonical JSON, field commitments, hash chain, export manifest) | Implemented |
 | Persistence and append path | Implemented |
 | Write / query / verify APIs | Implemented |
-| Retention, redaction, export (Scenario B) | Not started |
-| Compliance reporting (Scenario C) | Not started |
+| Retention, redaction, export (Scenario B) | Implemented |
+| Offline bundle verifier | Implemented |
+| Compliance reporting (Scenario C) | Implemented |
 
 ## Prerequisites
 
@@ -49,10 +50,17 @@ If local Postgres or another process already owns 5432 or 8080:
 POSTGRES_HOST_PORT=5433 AUDIT_PORT=8081 docker compose up --build
 ```
 
-The offline verifier is a one-shot CLI, not a long-running service:
+The offline verifier checks a saved export bundle. It is a one-shot CLI, not a long-running service:
 
 ```bash
-docker compose run --rm verifier
+# After POST /v1/exports, save the JSON body to bundle.json
+docker compose run --rm -v "$PWD/bundle.json:/bundle.json:ro" verifier /bundle.json
+```
+
+Or without Docker, after `mvn -pl audit-verifier-cli -am package`:
+
+```bash
+java -jar audit-verifier-cli/target/audit-verifier.jar bundle.json
 ```
 
 ## Build

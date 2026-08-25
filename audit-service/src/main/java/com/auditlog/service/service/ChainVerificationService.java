@@ -46,13 +46,17 @@ public class ChainVerificationService {
 
         String previousChainHash = null;
         long expectedSeq = fromSeq;
+        long writtenHead = repository.latestSeq();
+        long expectedUntil = Math.min(toSeq, writtenHead);
 
         for (AuditRecord record : records) {
-            if (record.seq() != expectedSeq) {
+            while (expectedSeq < record.seq() && expectedSeq <= expectedUntil) {
                 violations.add(new ChainViolation(
                         expectedSeq,
-                        ChainViolation.Type.SEQUENCE_GAP,
-                        "expected sequence %d but found %d".formatted(expectedSeq, record.seq())));
+                        ChainViolation.Type.UNAUTHORIZED_ARCHIVE,
+                        "sequence %d is missing; records cannot be deleted, only archived in place"
+                                .formatted(expectedSeq)));
+                expectedSeq++;
             }
             expectedSeq = record.seq() + 1;
 
@@ -62,6 +66,14 @@ public class ChainVerificationService {
             verifyPayload(record, violations);
 
             previousChainHash = record.chainHashHex();
+        }
+        while (expectedSeq <= expectedUntil) {
+            violations.add(new ChainViolation(
+                    expectedSeq,
+                    ChainViolation.Type.UNAUTHORIZED_ARCHIVE,
+                    "sequence %d is missing; records cannot be deleted, only archived in place"
+                            .formatted(expectedSeq)));
+            expectedSeq++;
         }
 
         return new ChainVerificationResult(fromSeq, toSeq, records.size(), violations);

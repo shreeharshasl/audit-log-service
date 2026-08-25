@@ -94,6 +94,20 @@ public final class PayloadCommitter {
      * this scheme.
      */
     public List<CommitmentCheck> verify(JsonNode payload, List<FieldCommitment> stored) {
+        // A fully redacted payload is stored as {}. The flattener would otherwise treat that
+        // empty root as an uncommitted EMPTY_OBJECT leaf, which is the shape redaction produces
+        // rather than a field that was added after the fact.
+        boolean fullyRedactedEmpty = payload != null
+                && payload.isObject()
+                && payload.isEmpty()
+                && !stored.isEmpty()
+                && stored.stream().allMatch(FieldCommitment::redacted);
+        if (fullyRedactedEmpty) {
+            return stored.stream()
+                    .map(field -> new CommitmentCheck(field.path(), CommitmentCheck.Status.UNVERIFIABLE_REDACTED))
+                    .toList();
+        }
+
         List<PayloadLeaf> leaves = flattener.flatten(payload);
         List<CommitmentCheck> results = new ArrayList<>();
 
@@ -118,11 +132,32 @@ public final class PayloadCommitter {
 
         for (PayloadLeaf leaf : leaves) {
             boolean known = stored.stream().anyMatch(f -> f.path().equals(leaf.path()));
-            if (!known) {
-                results.add(new CommitmentCheck(leaf.path(), CommitmentCheck.Status.UNCOMMITTED_FIELD));
+            if (known) {
+                continue;
             }
+            if (isRedactionResidue(leaf, stored)) {
+                continue;
+            }
+            results.add(new CommitmentCheck(leaf.path(), CommitmentCheck.Status.UNCOMMITTED_FIELD));
         }
         return results;
+    }
+
+    /**
+     * Empty containers (and null array slots) left behind after a child was redacted are not new
+     * fields. The flattener would otherwise report them as uncommitted leaves.
+     */
+    private static boolean isRedactionResidue(PayloadLeaf leaf, List<FieldCommitment> stored) {
+        if (leaf.kind() != PayloadLeaf.LeafKind.EMPTY_OBJECT
+                && leaf.kind() != PayloadLeaf.LeafKind.EMPTY_ARRAY
+                && leaf.kind() != PayloadLeaf.LeafKind.NULL) {
+            return false;
+        }
+        String prefix = leaf.path();
+        List<FieldCommitment> under = stored.stream()
+                .filter(field -> prefix.isEmpty() || field.path().startsWith(prefix + "/"))
+                .toList();
+        return !under.isEmpty() && under.stream().allMatch(FieldCommitment::redacted);
     }
 
     /** Outcome of checking one position. */

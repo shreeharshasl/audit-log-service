@@ -156,6 +156,15 @@ class EventHasherTest {
     }
 
     @Test
+    @DisplayName("epoch microseconds round-trip through Instant")
+    void epochMicrosRoundTrip() {
+        Instant original = Instant.parse("2026-03-01T10:15:30.123456Z");
+        assertThat(EventHasher.fromEpochMicros(EventHasher.toEpochMicros(original)))
+                .isEqualTo(original);
+        assertThat(EventHasher.fromEpochMicros(-1_000_001L)).isEqualTo(Instant.parse("1969-12-31T23:59:58.999999Z"));
+    }
+
+    @Test
     @DisplayName("every header field is required, because all of them are hashed")
     void rejectsMissingHeaderFields() {
         assertThatThrownBy(() -> new AuditEventHeader(null, "TYPE", "actor", "RESOURCE", "id", OCCURRED, RECORDED))

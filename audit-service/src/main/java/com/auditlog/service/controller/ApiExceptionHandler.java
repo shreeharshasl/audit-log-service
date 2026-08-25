@@ -13,7 +13,10 @@ import org.springframework.web.servlet.resource.NoResourceFoundException;
 import com.auditlog.hashing.CanonicalJsonException;
 import com.auditlog.service.dto.ApiErrorResponse;
 import com.auditlog.service.exception.DuplicateEventException;
+import com.auditlog.service.exception.EventConflictException;
 import com.auditlog.service.exception.EventNotFoundException;
+import com.auditlog.service.exception.ExportNotFoundException;
+import com.auditlog.service.exception.FieldPathNotFoundException;
 
 @RestControllerAdvice
 public class ApiExceptionHandler {
@@ -56,6 +59,21 @@ public class ApiExceptionHandler {
     @ExceptionHandler(EventNotFoundException.class)
     public ResponseEntity<ApiErrorResponse> onNotFound(EventNotFoundException e) {
         return build(HttpStatus.NOT_FOUND, "not_found", e.getMessage());
+    }
+
+    @ExceptionHandler(FieldPathNotFoundException.class)
+    public ResponseEntity<ApiErrorResponse> onMissingPath(FieldPathNotFoundException e) {
+        return build(HttpStatus.NOT_FOUND, "not_found", e.getMessage());
+    }
+
+    @ExceptionHandler(ExportNotFoundException.class)
+    public ResponseEntity<ApiErrorResponse> onMissingExport(ExportNotFoundException e) {
+        return build(HttpStatus.NOT_FOUND, "not_found", e.getMessage());
+    }
+
+    @ExceptionHandler(EventConflictException.class)
+    public ResponseEntity<ApiErrorResponse> onConflict(EventConflictException e) {
+        return build(HttpStatus.CONFLICT, e.error(), e.getMessage());
     }
 
     @ExceptionHandler(NoResourceFoundException.class)

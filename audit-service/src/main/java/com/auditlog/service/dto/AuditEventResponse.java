@@ -30,6 +30,8 @@ public record AuditEventResponse(
         String previousChainHash,
         String chainHash,
         int hashVersion,
+        boolean archived,
+        Instant archivedAt,
         List<FieldCommitmentResponse> commitments) {
 
     public AuditEventResponse {
@@ -53,6 +55,8 @@ public record AuditEventResponse(
                 record.previousChainHashHex(),
                 record.chainHashHex(),
                 record.hashVersion(),
+                record.archived(),
+                record.archivedAt(),
                 commitments.stream().map(FieldCommitmentResponse::from).toList());
     }
 }

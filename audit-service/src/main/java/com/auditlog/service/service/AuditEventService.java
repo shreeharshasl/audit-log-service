@@ -87,7 +87,9 @@ public class AuditEventService {
                 Hex.encode(contentHash),
                 head.lastChainHashHex(),
                 Hex.encode(chainHash),
-                HashFormat.VERSION);
+                HashFormat.VERSION,
+                false,
+                null);
 
         try {
             repository.insert(record);

@@ -53,7 +53,14 @@ public final class EventHasher {
      * precision matches what PostgreSQL {@code timestamptz} actually stores, so nothing is lost in the
      * round trip that would later fail verification.
      */
-    static long toEpochMicros(Instant instant) {
+    public static long toEpochMicros(Instant instant) {
         return Math.multiplyExact(instant.getEpochSecond(), 1_000_000L) + instant.getNano() / 1_000L;
+    }
+
+    /** Inverse of {@link #toEpochMicros(Instant)}, used when an export bundle is parsed. */
+    public static Instant fromEpochMicros(long micros) {
+        long seconds = Math.floorDiv(micros, 1_000_000L);
+        long remainder = Math.floorMod(micros, 1_000_000L);
+        return Instant.ofEpochSecond(seconds, remainder * 1_000L);
     }
 }

@@ -17,7 +17,8 @@ public record AuditEventSummaryResponse(
         Instant recordedAt,
         String contentHash,
         String chainHash,
-        int hashVersion) {
+        int hashVersion,
+        boolean archived) {
 
     public static AuditEventSummaryResponse from(AuditRecord record) {
         return new AuditEventSummaryResponse(
@@ -31,6 +32,7 @@ public record AuditEventSummaryResponse(
                 record.header().recordedAt(),
                 record.contentHashHex(),
                 record.chainHashHex(),
-                record.hashVersion());
+                record.hashVersion(),
+                record.archived());
     }
 }

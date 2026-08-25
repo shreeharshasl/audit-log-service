@@ -8,4 +8,8 @@ public record ServiceInfoResponse(
         String appendEvents,
         String getEvent,
         String listEvents,
-        String verifyChain) {}
+        String verifyChain,
+        String redactEvent,
+        String retentionPolicy,
+        String createExport,
+        String complianceReport) {}

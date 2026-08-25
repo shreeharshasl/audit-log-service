@@ -48,8 +48,9 @@ class AuditLogIT {
 
     @BeforeEach
     void resetChain() {
-        jdbc.execute("TRUNCATE audit_field_commitment, audit_event");
+        jdbc.execute("TRUNCATE audit_field_commitment, audit_event, audit_export");
         jdbc.update("UPDATE audit_chain_head SET last_seq = 0, last_chain_hash = repeat('0', 64) WHERE id = 1");
+        jdbc.update("UPDATE audit_retention_policy SET retain_days = 365 WHERE id = 1");
     }
 
     @Test

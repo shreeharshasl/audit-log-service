@@ -182,4 +182,85 @@ class PayloadCommitterTest {
                 .isInstanceOf(CanonicalJsonException.class)
                 .hasMessageContaining("duplicate commitment");
     }
+
+    @Test
+    @DisplayName("a fully redacted payload stored as {} is unverifiable, not an uncommitted empty object")
+    void fullyRedactedEmptyPayloadIsNotAnUncommittedRoot() {
+        CommittedPayload committed = committer.commit(payload());
+        List<FieldCommitment> redacted =
+                committed.fields().stream().map(FieldCommitment::redact).toList();
+
+        List<CommitmentCheck> checks = committer.verify(CanonicalJson.parse("{}"), redacted);
+
+        assertThat(checks).noneMatch(CommitmentCheck::isViolation);
+        assertThat(checks).allMatch(c -> c.status() == Status.UNVERIFIABLE_REDACTED);
+        assertThat(checks).hasSize(3);
+    }
+
+    @Test
+    @DisplayName("an empty object left inside an array after redaction is residue, not a new field")
+    void emptyObjectResidueInsideArrayIsNotUncommitted() {
+        JsonNode original = CanonicalJson.parse("{\"items\":[{\"secret\":\"x\"}]}");
+        CommittedPayload committed = committer.commit(original);
+        List<FieldCommitment> redacted =
+                committed.fields().stream().map(FieldCommitment::redact).toList();
+        JsonNode after = PayloadRedactor.removePaths(original, List.of("/items/0/secret"));
+
+        List<CommitmentCheck> checks = committer.verify(after, redacted);
+
+        assertThat(checks).noneMatch(CommitmentCheck::isViolation);
+        assertThat(CanonicalJson.canonicalString(after)).isEqualTo("{\"items\":[{}]}");
+    }
+
+    @Test
+    @DisplayName("a null array slot left after redacting an element is residue, not a new field")
+    void nullArrayResidueIsNotUncommitted() {
+        JsonNode original = CanonicalJson.parse("{\"tags\":[\"a\"]}");
+        CommittedPayload committed = committer.commit(original);
+        List<FieldCommitment> redacted =
+                committed.fields().stream().map(FieldCommitment::redact).toList();
+        JsonNode after = PayloadRedactor.removePaths(original, List.of("/tags/0"));
+
+        List<CommitmentCheck> checks = committer.verify(after, redacted);
+
+        assertThat(checks).noneMatch(CommitmentCheck::isViolation);
+        assertThat(CanonicalJson.canonicalString(after)).isEqualTo("{\"tags\":[null]}");
+    }
+
+    @Test
+    @DisplayName("nulling a whole array object leaves an uncommitted null that is residue")
+    void nulledArrayObjectIsResidue() {
+        JsonNode original = CanonicalJson.parse("{\"items\":[{\"secret\":\"x\"}]}");
+        CommittedPayload committed = committer.commit(original);
+        List<FieldCommitment> redacted =
+                committed.fields().stream().map(FieldCommitment::redact).toList();
+        JsonNode after = PayloadRedactor.removePaths(original, List.of("/items/0"));
+
+        List<CommitmentCheck> checks = committer.verify(after, redacted);
+
+        assertThat(checks).noneMatch(CommitmentCheck::isViolation);
+        assertThat(CanonicalJson.canonicalString(after)).isEqualTo("{\"items\":[null]}");
+    }
+
+    @Test
+    @DisplayName("a null payload is not treated as a fully redacted empty object")
+    void nullPayloadIsRejectedRatherThanFullyRedacted() {
+        assertThatThrownBy(() -> committer.verify(null, List.of())).isInstanceOf(CanonicalJsonException.class);
+    }
+
+    @Test
+    @DisplayName("an originally empty array that is still present after sibling redaction verifies")
+    void originallyEmptyArrayIsNotResidueConfusion() {
+        JsonNode original = CanonicalJson.parse("{\"amount\":1,\"tags\":[]}");
+        CommittedPayload committed = committer.commit(original);
+        List<FieldCommitment> fields = new java.util.ArrayList<>();
+        for (FieldCommitment field : committed.fields()) {
+            fields.add(field.path().equals("/amount") ? field.redact() : field);
+        }
+        JsonNode after = PayloadRedactor.removePaths(original, List.of("/amount"));
+
+        List<CommitmentCheck> checks = committer.verify(after, fields);
+
+        assertThat(checks).noneMatch(CommitmentCheck::isViolation);
+    }
 }
