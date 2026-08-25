@@ -19,6 +19,7 @@ public class HomeController {
                 root + "/swagger-ui.html",
                 "POST " + root + "/v1/audit-events",
                 "GET " + root + "/v1/audit-events/{seq}",
+                "GET " + root + "/v1/audit-events?beforeSeq=&limit=",
                 "GET " + root + "/v1/chain/verify");
     }
 

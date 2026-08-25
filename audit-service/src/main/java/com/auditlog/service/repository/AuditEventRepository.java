@@ -15,6 +15,7 @@ import org.springframework.stereotype.Repository;
 import com.auditlog.hashing.AuditEventHeader;
 import com.auditlog.hashing.FieldCommitment;
 import com.auditlog.hashing.PayloadLeaf.LeafKind;
+import com.auditlog.service.model.AuditEventQuery;
 import com.auditlog.service.model.AuditRecord;
 import com.auditlog.service.model.ChainHead;
 
@@ -126,6 +127,39 @@ public class AuditEventRepository {
 
     public List<AuditRecord> findRange(long fromSeq, long toSeq) {
         return jdbc.query(SELECT_RANGE, RECORD_MAPPER, fromSeq, toSeq);
+    }
+
+    /**
+     * Newest-first keyset page. {@code fetchLimit} is the number of rows to return, typically one
+     * more than the caller's page size so the service can tell whether another page exists.
+     */
+    public List<AuditRecord> findPage(AuditEventQuery query, int fetchLimit) {
+        StringBuilder sql = new StringBuilder(SELECT_COLUMNS);
+        sql.append(" WHERE 1=1");
+        List<Object> args = new ArrayList<>();
+        if (query.beforeSeq() != null) {
+            sql.append(" AND seq < ?");
+            args.add(query.beforeSeq());
+        }
+        if (query.actorId() != null) {
+            sql.append(" AND actor_id = ?");
+            args.add(query.actorId());
+        }
+        if (query.eventType() != null) {
+            sql.append(" AND event_type = ?");
+            args.add(query.eventType());
+        }
+        if (query.resourceType() != null) {
+            sql.append(" AND resource_type = ?");
+            args.add(query.resourceType());
+        }
+        if (query.resourceId() != null) {
+            sql.append(" AND resource_id = ?");
+            args.add(query.resourceId());
+        }
+        sql.append(" ORDER BY seq DESC LIMIT ?");
+        args.add(fetchLimit);
+        return jdbc.query(sql.toString(), RECORD_MAPPER, args.toArray());
     }
 
     public List<FieldCommitment> findCommitments(long seq) {

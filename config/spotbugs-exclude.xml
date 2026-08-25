@@ -42,6 +42,10 @@
     <Bug pattern="EI_EXPOSE_REP2"/>
   </Match>
   <Match>
+    <Class name="com.auditlog.service.service.AuditEventQueryService"/>
+    <Bug pattern="EI_EXPOSE_REP2"/>
+  </Match>
+  <Match>
     <Class name="com.auditlog.service.service.ChainVerificationService"/>
     <Bug pattern="EI_EXPOSE_REP2"/>
   </Match>

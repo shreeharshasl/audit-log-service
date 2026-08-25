@@ -64,6 +64,7 @@ class AuditLogIT {
         assertThat(json.get("service").asText()).isEqualTo("audit-log-service");
         assertThat(json.get("docs").asText()).isEqualTo("/audit-service/api/swagger-ui.html");
         assertThat(json.get("health").asText()).isEqualTo("/audit-service/api/actuator/health");
+        assertThat(json.get("listEvents").asText()).contains("/v1/audit-events?beforeSeq=");
     }
 
     @Test
@@ -187,6 +188,88 @@ class AuditLogIT {
                 .isZero();
     }
 
+    @Test
+    @DisplayName("an empty log lists as an empty page")
+    void emptyLogListsAsAnEmptyPage() throws Exception {
+        JsonNode page = list();
+
+        assertThat(page.get("items")).isEmpty();
+        assertThat(page.get("hasMore").asBoolean()).isFalse();
+        assertThat(page.hasNonNull("nextBeforeSeq")).isFalse();
+    }
+
+    @Test
+    @DisplayName("listing is newest-first and continues from beforeSeq")
+    void listingIsNewestFirstAndPagesBySeqCursor() throws Exception {
+        append("user-1", "{\"amount\":1}");
+        append("user-2", "{\"amount\":2}");
+        append("user-3", "{\"amount\":3}");
+
+        JsonNode first = list("limit", "2");
+        assertThat(first.get("items")).hasSize(2);
+        assertThat(first.get("items").get(0).get("seq").asLong()).isEqualTo(3L);
+        assertThat(first.get("items").get(1).get("seq").asLong()).isEqualTo(2L);
+        assertThat(first.get("hasMore").asBoolean()).isTrue();
+        assertThat(first.get("nextBeforeSeq").asLong()).isEqualTo(2L);
+        assertThat(first.get("items").get(0).hasNonNull("commitments")).isFalse();
+
+        JsonNode second = list("limit", "2", "beforeSeq", "2");
+        assertThat(second.get("items")).hasSize(1);
+        assertThat(second.get("items").get(0).get("seq").asLong()).isEqualTo(1L);
+        assertThat(second.get("hasMore").asBoolean()).isFalse();
+        assertThat(second.hasNonNull("nextBeforeSeq")).isFalse();
+    }
+
+    @Test
+    @DisplayName("listing can restrict results to one actor")
+    void listingCanFilterByActor() throws Exception {
+        append("user-1", "{\"amount\":1}");
+        append("user-2", "{\"amount\":2}");
+        append("user-1", "{\"amount\":3}");
+
+        JsonNode page = list("actorId", "user-1");
+        assertThat(page.get("items")).hasSize(2);
+        assertThat(page.get("items").get(0).get("actorId").asText()).isEqualTo("user-1");
+        assertThat(page.get("items").get(1).get("actorId").asText()).isEqualTo("user-1");
+        assertThat(page.get("items").get(0).get("seq").asLong()).isEqualTo(3L);
+    }
+
+    @Test
+    @DisplayName("listing can restrict results to one event type")
+    void listingCanFilterByEventType() throws Exception {
+        mockMvc.perform(appendRequest("user-1", "{\"ok\":true}", null, "session.login", "acc-1"))
+                .andExpect(status().isCreated());
+        append("user-1", "{\"amount\":1}");
+
+        JsonNode page = list("eventType", "session.login");
+        assertThat(page.get("items")).hasSize(1);
+        assertThat(page.get("items").get(0).get("eventType").asText()).isEqualTo("session.login");
+    }
+
+    @Test
+    @DisplayName("listing can restrict results to one resource")
+    void listingCanFilterByResource() throws Exception {
+        append("user-1", "{\"amount\":1}");
+        mockMvc.perform(appendRequest("user-1", "{\"amount\":2}", null, "account.updated", "acc-2"))
+                .andExpect(status().isCreated());
+
+        JsonNode page = list("resourceType", "account", "resourceId", "acc-2");
+        assertThat(page.get("items")).hasSize(1);
+        assertThat(page.get("items").get(0).get("resourceId").asText()).isEqualTo("acc-2");
+    }
+
+    @Test
+    @DisplayName("a resourceId without resourceType is rejected")
+    void resourceIdWithoutTypeIsRejected() throws Exception {
+        mockMvc.perform(apiGet("/v1/audit-events").param("resourceId", "acc-1")).andExpect(status().isBadRequest());
+    }
+
+    @Test
+    @DisplayName("a beforeSeq below 1 is rejected")
+    void beforeSeqBelowOneIsRejected() throws Exception {
+        mockMvc.perform(apiGet("/v1/audit-events").param("beforeSeq", "0")).andExpect(status().isBadRequest());
+    }
+
     private JsonNode append(String actorId, String payloadJson) throws Exception {
         String response = mockMvc.perform(appendRequest(actorId, payloadJson, null))
                 .andExpect(status().isCreated())
@@ -214,20 +297,38 @@ class AuditLogIT {
         return objectMapper.readTree(response);
     }
 
+    private JsonNode list(String... params) throws Exception {
+        MockHttpServletRequestBuilder request = apiGet("/v1/audit-events");
+        for (int i = 0; i < params.length; i += 2) {
+            request.param(params[i], params[i + 1]);
+        }
+        String response = mockMvc.perform(request)
+                .andExpect(status().isOk())
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+        return objectMapper.readTree(response);
+    }
+
     private static MockHttpServletRequestBuilder appendRequest(String actorId, String payloadJson, String eventId) {
+        return appendRequest(actorId, payloadJson, eventId, "account.updated", "acc-1");
+    }
+
+    private static MockHttpServletRequestBuilder appendRequest(
+            String actorId, String payloadJson, String eventId, String eventType, String resourceId) {
         String idField = eventId == null ? "" : "\"eventId\":\"" + eventId + "\",";
         String body =
                 """
                 {
-                  %s"eventType": "account.updated",
+                  %s"eventType": "%s",
                   "actorId": "%s",
                   "resourceType": "account",
-                  "resourceId": "acc-1",
+                  "resourceId": "%s",
                   "occurredAt": "2026-01-01T00:00:00Z",
                   "payload": %s
                 }
                 """
-                        .formatted(idField, actorId, payloadJson);
+                        .formatted(idField, eventType, actorId, resourceId, payloadJson);
         return apiPost("/v1/audit-events")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(body);

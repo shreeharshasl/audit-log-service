@@ -36,8 +36,14 @@ Postgres, the HTTP API, and the verifier image:
 docker compose up --build
 ```
 
-http://localhost:8080/audit-service/api is the API. If local Postgres or another process already owns
-5432 or 8080:
+http://localhost:8080/audit-service/api is the API. List newest-first with keyset pagination:
+
+```bash
+curl -sS 'http://localhost:8080/audit-service/api/v1/audit-events?limit=50'
+curl -sS 'http://localhost:8080/audit-service/api/v1/audit-events?beforeSeq=12&limit=50&actorId=user-1'
+```
+
+If local Postgres or another process already owns 5432 or 8080:
 
 ```bash
 POSTGRES_HOST_PORT=5433 AUDIT_PORT=8081 docker compose up --build
@@ -117,5 +123,6 @@ limitation rather than quietly omitted.
 
 ## Documentation
 
+- `docs/setup-and-api.md` — how to run the service and how each HTTP API works
 - `docs/adr/` — architecture decision records
 - `docs/ai-usage/` — AI assistance log with dispositions and rationale
