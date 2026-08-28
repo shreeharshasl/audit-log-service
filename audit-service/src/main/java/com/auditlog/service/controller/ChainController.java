@@ -1,5 +1,6 @@
 package com.auditlog.service.controller;
 
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -23,6 +24,7 @@ public class ChainController {
 
     /** Verifies a range of the chain, defaulting to the whole of it. */
     @GetMapping("/verify")
+    @PreAuthorize("hasRole('VERIFY')")
     public ChainVerificationResponse verify(
             @RequestParam(name = "fromSeq", defaultValue = "1") long fromSeq,
             @RequestParam(name = "toSeq", required = false) Long toSeq) {

@@ -32,6 +32,7 @@ services:
       AUDIT_DB_USER: ${AUDIT_DB_USER:-audit}
       AUDIT_DB_PASSWORD: ${AUDIT_DB_PASSWORD:-audit}
       AUDIT_PORT: 8080
+      AUDIT_BOOTSTRAP_API_KEY: ${AUDIT_BOOTSTRAP_API_KEY:-dev-local-key}
     ports:
       - "${AUDIT_PORT:-8080}:8080"
     depends_on:

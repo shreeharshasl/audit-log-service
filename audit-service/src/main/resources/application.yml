@@ -39,6 +39,9 @@ audit:
   query:
     default-page-size: 50
     max-page-size: 200
+  security:
+    bootstrap-key: ${AUDIT_BOOTSTRAP_API_KEY:dev-local-key}
+    open-docs: ${AUDIT_OPEN_DOCS:true}
 
 logging:
   level:

@@ -5,6 +5,7 @@ import java.net.URI;
 import jakarta.validation.Valid;
 
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -37,6 +38,7 @@ public class AuditEventController {
     }
 
     @GetMapping
+    @PreAuthorize("hasRole('READ')")
     public AuditEventPageResponse list(
             @RequestParam(name = "beforeSeq", required = false) Long beforeSeq,
             @RequestParam(name = "limit", required = false) Integer limit,
@@ -49,6 +51,7 @@ public class AuditEventController {
     }
 
     @PostMapping
+    @PreAuthorize("hasRole('APPEND')")
     public ResponseEntity<AppendEventResponse> append(@Valid @RequestBody AppendEventRequest request) {
         AuditRecord record = service.append(new NewAuditEvent(
                 request.eventId(),
@@ -66,6 +69,7 @@ public class AuditEventController {
     }
 
     @GetMapping("/{seq}")
+    @PreAuthorize("hasRole('READ')")
     public AuditEventResponse findBySeq(@PathVariable("seq") long seq) {
         AuditRecord record = service.findBySeq(seq);
         return AuditEventResponse.from(record, service.findCommitments(seq));

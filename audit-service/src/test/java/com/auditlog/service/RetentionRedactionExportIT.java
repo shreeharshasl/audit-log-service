@@ -100,6 +100,20 @@ class RetentionRedactionExportIT {
     }
 
     @Test
+    @DisplayName("redaction is itself recorded on the chain")
+    void redactionIsRecordedOnTheChain() throws Exception {
+        append("{\"amount\":100}");
+        redact(1, "/amount");
+
+        JsonNode audit = fetch(2);
+        assertThat(audit.get("eventType").asText()).isEqualTo("audit.redaction");
+        assertThat(audit.get("actorId").asText()).isEqualTo("bootstrap");
+        assertThat(audit.get("resourceType").asText()).isEqualTo("audit_event");
+        assertThat(audit.get("resourceId").asText()).isEqualTo("1");
+        assertThat(verifyChain().get("intact").asBoolean()).isTrue();
+    }
+
+    @Test
     @DisplayName("a path that was never committed is not found")
     void unknownPathIsNotFound() throws Exception {
         append("{\"amount\":100}");
@@ -227,8 +241,8 @@ class RetentionRedactionExportIT {
         assertThat(report.get("retention").get("compliant").asBoolean()).isTrue();
         assertThat(report.get("redaction").get("redactedFieldCount").asLong()).isEqualTo(1L);
         assertThat(report.get("redaction").get("eventsWithRedaction").asLong()).isEqualTo(1L);
-        assertThat(report.get("volume").get("totalEvents").asLong()).isEqualTo(2L);
-        assertThat(report.get("volume").get("byEventType")).hasSize(2);
+        assertThat(report.get("volume").get("totalEvents").asLong()).isEqualTo(3L);
+        assertThat(report.get("volume").get("byEventType")).hasSize(3);
     }
 
     @Test
@@ -430,15 +444,15 @@ class RetentionRedactionExportIT {
     }
 
     private static MockHttpServletRequestBuilder apiGet(String path, Object... uriVars) {
-        return get(CONTEXT + path, uriVars).contextPath(CONTEXT);
+        return TestApiAuth.withKey(get(CONTEXT + path, uriVars).contextPath(CONTEXT));
     }
 
     private static MockHttpServletRequestBuilder apiPost(String path) {
-        return post(CONTEXT + path).contextPath(CONTEXT);
+        return TestApiAuth.withKey(post(CONTEXT + path).contextPath(CONTEXT));
     }
 
     private static MockHttpServletRequestBuilder apiPut(String path) {
-        return put(CONTEXT + path).contextPath(CONTEXT);
+        return TestApiAuth.withKey(put(CONTEXT + path).contextPath(CONTEXT));
     }
 
     private static List<String> violationTypesAt(JsonNode result, long seq) {

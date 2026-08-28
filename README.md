@@ -119,9 +119,11 @@ limitation rather than quietly omitted.
 
 ### Other deliberate limitations
 
-- **Authentication and authorization are out of scope.** Endpoints are open. In production,
-  redaction, archival, and compliance reporting must sit behind authenticated, separately authorized
-  roles, and every privileged call must itself be audited.
+- **Hashed API keys, not a user login.** Callers send `X-API-Key` (or `Authorization: Bearer`).
+  The service stores SHA-256 of the key, never the key itself. Roles gate append, read, verify,
+  redact, retain, export, and compliance. Redaction, retention changes, and exports are themselves
+  written to the chain as `audit.*` events. Health stays public. There is no public create-key API;
+  seed a client via `AUDIT_BOOTSTRAP_API_KEY` or insert into `api_client`.
 - **Redacted fields become unverifiable, not verified.** Once the salt is gone the commitment cannot
   be independently recomputed, so a log operator could substitute it. Only a checkpoint issued
   before the redaction pins the original value.

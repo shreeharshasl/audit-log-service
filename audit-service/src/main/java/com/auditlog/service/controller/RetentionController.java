@@ -2,6 +2,7 @@ package com.auditlog.service.controller;
 
 import jakarta.validation.Valid;
 
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
@@ -25,17 +26,21 @@ public class RetentionController {
     }
 
     @GetMapping("/policy")
+    @PreAuthorize("hasRole('RETAIN')")
     public RetentionPolicyResponse policy() {
         return RetentionPolicyResponse.from(retentionService.policy());
     }
 
     @PutMapping("/policy")
+    @PreAuthorize("hasRole('RETAIN')")
     public RetentionPolicyResponse updatePolicy(@Valid @RequestBody UpdateRetentionPolicyRequest request) {
-        return RetentionPolicyResponse.from(retentionService.updatePolicy(request.retainDays()));
+        return RetentionPolicyResponse.from(
+                retentionService.updatePolicy(request.retainDays(), CurrentApiClient.name()));
     }
 
     @PostMapping("/apply")
+    @PreAuthorize("hasRole('RETAIN')")
     public RetentionApplyResponse apply() {
-        return RetentionApplyResponse.from(retentionService.apply());
+        return RetentionApplyResponse.from(retentionService.apply(CurrentApiClient.name()));
     }
 }

@@ -61,6 +61,9 @@ class ServiceCoverageTest {
     @Mock
     private RetentionPolicyRepository policies;
 
+    @Mock
+    private PrivilegedActionAuditor auditor;
+
     @Test
     @DisplayName("an invalid verify range is rejected before the chain is walked")
     void verifyRejectsInvalidRange() {
@@ -140,10 +143,10 @@ class ServiceCoverageTest {
     @Test
     @DisplayName("redaction with no paths is rejected")
     void redactRejectsEmptyPaths() {
-        RedactionService service = new RedactionService(events);
+        RedactionService service = new RedactionService(events, auditor);
 
-        assertThatThrownBy(() -> service.redact(1, List.of())).isInstanceOf(IllegalArgumentException.class);
-        assertThatThrownBy(() -> service.redact(1, null)).isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> service.redact(1, List.of(), "client")).isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> service.redact(1, null, "client")).isInstanceOf(IllegalArgumentException.class);
     }
 
     @Test
@@ -151,7 +154,7 @@ class ServiceCoverageTest {
     void redactMissingSeqIsNotFound() {
         when(events.lockBySeq(9)).thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> new RedactionService(events).redact(9, List.of("/amount")))
+        assertThatThrownBy(() -> new RedactionService(events, auditor).redact(9, List.of("/amount"), "client"))
                 .isInstanceOf(EventNotFoundException.class);
     }
 
@@ -167,10 +170,10 @@ class ServiceCoverageTest {
     @Test
     @DisplayName("retainDays outside the allowed window is rejected")
     void retentionRejectsInvalidWindow() {
-        RetentionService service = new RetentionService(policies, events, Clock.fixed(NOW, ZoneOffset.UTC));
+        RetentionService service = new RetentionService(policies, events, Clock.fixed(NOW, ZoneOffset.UTC), auditor);
 
-        assertThatThrownBy(() -> service.updatePolicy(0)).isInstanceOf(IllegalArgumentException.class);
-        assertThatThrownBy(() -> service.updatePolicy(36_501)).isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> service.updatePolicy(0, "client")).isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> service.updatePolicy(36_501, "client")).isInstanceOf(IllegalArgumentException.class);
     }
 
     @Test
@@ -180,7 +183,8 @@ class ServiceCoverageTest {
         when(events.findSeqsEligibleForArchive(any())).thenReturn(List.of(1L));
         when(events.lockBySeq(1)).thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> new RetentionService(policies, events, Clock.fixed(NOW, ZoneOffset.UTC)).apply())
+        assertThatThrownBy(() -> new RetentionService(policies, events, Clock.fixed(NOW, ZoneOffset.UTC), auditor)
+                        .apply("client"))
                 .isInstanceOf(EventNotFoundException.class);
     }
 
@@ -202,7 +206,7 @@ class ServiceCoverageTest {
         when(events.findSeqsEligibleForArchive(any())).thenReturn(List.of(1L));
         when(events.lockBySeq(1)).thenReturn(Optional.of(archived));
 
-        var result = new RetentionService(policies, events, Clock.fixed(NOW, ZoneOffset.UTC)).apply();
+        var result = new RetentionService(policies, events, Clock.fixed(NOW, ZoneOffset.UTC), auditor).apply("client");
 
         assertThat(result.archivedCount()).isEqualTo(1);
         verify(events, never()).markArchived(anyLong(), any());
@@ -219,7 +223,7 @@ class ServiceCoverageTest {
         when(events.lockBySeq(1)).thenReturn(Optional.of(live.record()));
         when(events.findCommitments(1)).thenReturn(mixed);
 
-        new RetentionService(policies, events, Clock.fixed(NOW, ZoneOffset.UTC)).apply();
+        new RetentionService(policies, events, Clock.fixed(NOW, ZoneOffset.UTC), auditor).apply("client");
 
         verify(events).redactCommitment(1, live.fields().get(1).path());
         verify(events, never()).redactCommitment(1, live.fields().get(0).path());
@@ -234,7 +238,7 @@ class ServiceCoverageTest {
         when(events.findCommitments(1)).thenReturn(stored.fields());
         when(events.findBySeq(1)).thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> new RedactionService(events).redact(1, List.of("/amount")))
+        assertThatThrownBy(() -> new RedactionService(events, auditor).redact(1, List.of("/amount"), "client"))
                 .isInstanceOf(EventNotFoundException.class);
     }
 
@@ -244,17 +248,18 @@ class ServiceCoverageTest {
         UUID id = UUID.fromString("11111111-1111-1111-1111-111111111111");
         when(exports.findById(id)).thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> new ExportService(events, exports, Clock.fixed(NOW, ZoneOffset.UTC)).regenerate(id))
+        assertThatThrownBy(() -> new ExportService(events, exports, Clock.fixed(NOW, ZoneOffset.UTC), auditor)
+                        .regenerate(id, "client"))
                 .isInstanceOf(ExportNotFoundException.class);
     }
 
     @Test
     @DisplayName("an invalid export range is rejected")
     void exportRejectsInvalidRange() {
-        ExportService service = new ExportService(events, exports, Clock.fixed(NOW, ZoneOffset.UTC));
+        ExportService service = new ExportService(events, exports, Clock.fixed(NOW, ZoneOffset.UTC), auditor);
 
-        assertThatThrownBy(() -> service.create(0, 1)).isInstanceOf(IllegalArgumentException.class);
-        assertThatThrownBy(() -> service.create(3, 1)).isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> service.create(0, 1, "client")).isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> service.create(3, 1, "client")).isInstanceOf(IllegalArgumentException.class);
     }
 
     @Test
@@ -337,7 +342,9 @@ class ServiceCoverageTest {
     @DisplayName("blank filter values are treated as absent")
     void blankQueryFiltersAreIgnored() {
         AuditProperties properties = new AuditProperties(
-                new AuditProperties.Payload(8, 256, 65536, 8192), new AuditProperties.Query(50, 200));
+                new AuditProperties.Payload(8, 256, 65536, 8192),
+                new AuditProperties.Query(50, 200),
+                new AuditProperties.Security("", true));
         when(events.findPage(any(), eq(51))).thenReturn(List.of());
 
         new AuditEventQueryService(events, properties).list(new AuditEventQuery(null, "  ", "", null, null, null));
@@ -353,6 +360,17 @@ class ServiceCoverageTest {
         assertThat(query.resolvePageSize(null)).isEqualTo(50);
         assertThat(query.resolvePageSize(0)).isEqualTo(50);
         assertThat(query.resolvePageSize(999)).isEqualTo(200);
+    }
+
+    @Test
+    @DisplayName("a missing security block uses an empty bootstrap key")
+    void missingSecurityBlockDefaults() {
+        AuditProperties properties = new AuditProperties(
+                new AuditProperties.Payload(8, 256, 65536, 8192), new AuditProperties.Query(50, 200), null);
+
+        assertThat(properties.security().bootstrapKey()).isEmpty();
+        assertThat(properties.security().openDocs()).isTrue();
+        assertThat(new AuditProperties.Security(null, false).bootstrapKey()).isEmpty();
     }
 
     private static Stored stored(long seq, String previous, String payloadJson) {

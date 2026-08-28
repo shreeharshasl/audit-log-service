@@ -27,13 +27,15 @@ import com.fasterxml.jackson.databind.JsonNode;
 public class RedactionService {
 
     private final AuditEventRepository events;
+    private final PrivilegedActionAuditor auditor;
 
-    public RedactionService(AuditEventRepository events) {
+    public RedactionService(AuditEventRepository events, PrivilegedActionAuditor auditor) {
         this.events = events;
+        this.auditor = auditor;
     }
 
     @Transactional
-    public AuditRecord redact(long seq, List<String> paths) {
+    public AuditRecord redact(long seq, List<String> paths, String actorId) {
         if (paths == null || paths.isEmpty()) {
             throw new IllegalArgumentException("at least one path is required");
         }
@@ -62,12 +64,15 @@ public class RedactionService {
         }
 
         List<String> jsonPaths = collapseToAncestors(requested);
-        JsonNode updated = PayloadRedactor.removePaths(CanonicalJson.parse(record.canonicalPayload()), jsonPaths);
-        events.updateCanonicalPayload(seq, CanonicalJson.canonicalString(updated));
+        JsonNode redactedPayload =
+                PayloadRedactor.removePaths(CanonicalJson.parse(record.canonicalPayload()), jsonPaths);
+        events.updateCanonicalPayload(seq, CanonicalJson.canonicalString(redactedPayload));
         for (String leaf : leavesToRedact) {
             events.redactCommitment(seq, leaf);
         }
-        return events.findBySeq(seq).orElseThrow(() -> new EventNotFoundException(seq));
+        AuditRecord stored = events.findBySeq(seq).orElseThrow(() -> new EventNotFoundException(seq));
+        auditor.redacted(actorId, seq, jsonPaths);
+        return stored;
     }
 
     static boolean matchesPath(String fieldPath, String requested) {

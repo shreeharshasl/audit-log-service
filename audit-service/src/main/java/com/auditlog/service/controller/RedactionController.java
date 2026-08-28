@@ -2,6 +2,7 @@ package com.auditlog.service.controller;
 
 import jakarta.validation.Valid;
 
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -27,8 +28,9 @@ public class RedactionController {
     }
 
     @PostMapping("/{seq}/redactions")
+    @PreAuthorize("hasRole('REDACT')")
     public AuditEventResponse redact(@PathVariable("seq") long seq, @Valid @RequestBody RedactEventRequest request) {
-        AuditRecord record = redactionService.redact(seq, request.paths());
+        AuditRecord record = redactionService.redact(seq, request.paths(), CurrentApiClient.name());
         return AuditEventResponse.from(record, eventService.findCommitments(seq));
     }
 }

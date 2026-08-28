@@ -1,5 +1,6 @@
 package com.auditlog.service.controller;
 
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -18,6 +19,7 @@ public class ComplianceController {
     }
 
     @GetMapping("/report")
+    @PreAuthorize("hasRole('COMPLIANCE')")
     public ComplianceReportResponse report() {
         return ComplianceReportResponse.from(complianceService.report());
     }

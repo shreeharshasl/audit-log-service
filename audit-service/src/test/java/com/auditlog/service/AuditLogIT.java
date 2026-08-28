@@ -390,11 +390,11 @@ class AuditLogIT {
     }
 
     private static MockHttpServletRequestBuilder apiGet(String path, Object... uriVars) {
-        return get(CONTEXT + path, uriVars).contextPath(CONTEXT);
+        return TestApiAuth.withKey(get(CONTEXT + path, uriVars).contextPath(CONTEXT));
     }
 
     private static MockHttpServletRequestBuilder apiPost(String path) {
-        return post(CONTEXT + path).contextPath(CONTEXT);
+        return TestApiAuth.withKey(post(CONTEXT + path).contextPath(CONTEXT));
     }
 
     private static List<String> violationTypesAt(JsonNode result, long seq) {

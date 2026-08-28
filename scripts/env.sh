@@ -21,6 +21,7 @@ export PATH="$JAVA_HOME/bin:/opt/homebrew/opt/postgresql@16/bin:$PATH"
 
 export AUDIT_DB_URL="${AUDIT_DB_URL:-jdbc:postgresql://localhost:5432/auditlog}"
 export AUDIT_DB_USER="${AUDIT_DB_USER:-$(whoami)}"
+export AUDIT_BOOTSTRAP_API_KEY="${AUDIT_BOOTSTRAP_API_KEY:-dev-local-key}"
 
 echo "JAVA_HOME=$JAVA_HOME"
 echo "java: $(java -version 2>&1 | head -1)"
