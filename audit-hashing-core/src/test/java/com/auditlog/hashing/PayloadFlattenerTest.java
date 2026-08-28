@@ -123,4 +123,25 @@ class PayloadFlattenerTest {
                 .isInstanceOf(CanonicalJsonException.class)
                 .hasMessageContaining("limit is 4");
     }
+
+    @Test
+    @DisplayName("binary JSON nodes cannot be committed as payload fields")
+    void rejectsBinaryNodes() {
+        var root = (com.fasterxml.jackson.databind.node.ObjectNode) CanonicalJson.parse("{}");
+        root.set("bin", com.fasterxml.jackson.databind.node.JsonNodeFactory.instance.binaryNode(new byte[] {1}));
+
+        assertThatThrownBy(() -> flattener.flatten(root))
+                .isInstanceOf(CanonicalJsonException.class)
+                .hasMessageContaining("unsupported JSON node type");
+    }
+
+    @Test
+    @DisplayName("a leaf's canonical value is the UTF-8 of the committed text")
+    void valueBytesMatchCanonicalText() {
+        PayloadLeaf leaf =
+                flattener.flatten(CanonicalJson.parse("{\"v\":\"ab\"}")).get(0);
+
+        assertThat(PayloadFlattener.valueBytes(leaf))
+                .isEqualTo(leaf.canonicalValue().getBytes(java.nio.charset.StandardCharsets.UTF_8));
+    }
 }

@@ -263,6 +263,108 @@ class RetentionRedactionExportIT {
         assertThat(json.get("complianceReport").asText()).contains("/compliance/report");
     }
 
+    @Test
+    @DisplayName("a missing export is not found")
+    void missingExportIsNotFound() throws Exception {
+        mockMvc.perform(apiGet("/v1/exports/{id}", "11111111-1111-1111-1111-111111111111"))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
+    @DisplayName("redacting a missing sequence is not found")
+    void redactMissingSequenceIsNotFound() throws Exception {
+        mockMvc.perform(apiPost("/v1/audit-events/99/redactions")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"paths\":[\"/amount\"]}"))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
+    @DisplayName("an empty log has a clean compliance report")
+    void emptyLogComplianceReportIsClean() throws Exception {
+        JsonNode report = read(mockMvc.perform(apiGet("/v1/compliance/report")).andExpect(status().isOk()));
+
+        assertThat(report.get("chain").get("recordsChecked").asInt()).isZero();
+        assertThat(report.get("retention").get("compliant").asBoolean()).isTrue();
+        assertThat(report.get("volume").get("totalEvents").asLong()).isZero();
+    }
+
+    @Test
+    @DisplayName("the compliance report includes chain violations when the log is tampered")
+    void complianceReportIncludesViolations() throws Exception {
+        append("{\"amount\":1}");
+        jdbc.update("UPDATE audit_event SET actor_id = ? WHERE seq = ?", "attacker", 1);
+
+        JsonNode report = read(mockMvc.perform(apiGet("/v1/compliance/report")).andExpect(status().isOk()));
+
+        assertThat(report.get("chain").get("intact").asBoolean()).isFalse();
+        assertThat(report.get("chain").get("violations")).isNotEmpty();
+    }
+
+    @Test
+    @DisplayName("applying retention twice does not double-archive")
+    void retentionApplyIsIdempotent() throws Exception {
+        append("{\"amount\":100}");
+        now.set(now.get().plus(2, ChronoUnit.DAYS));
+        mockMvc.perform(apiPut("/v1/retention/policy")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"retainDays\":1}"))
+                .andExpect(status().isOk());
+        mockMvc.perform(apiPost("/v1/retention/apply")).andExpect(status().isOk());
+
+        JsonNode second = read(mockMvc.perform(apiPost("/v1/retention/apply")).andExpect(status().isOk()));
+        assertThat(second.get("archivedCount").asInt()).isZero();
+    }
+
+    @Test
+    @DisplayName("retention skips fields that were already redacted")
+    void retentionSkipsAlreadyRedactedFields() throws Exception {
+        append("{\"amount\":100,\"currency\":\"USD\"}");
+        redact(1, "/amount");
+        now.set(now.get().plus(2, ChronoUnit.DAYS));
+        mockMvc.perform(apiPut("/v1/retention/policy")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"retainDays\":1}"))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(apiPost("/v1/retention/apply")).andExpect(status().isOk());
+
+        JsonNode stored = fetch(1);
+        assertThat(stored.get("archived").asBoolean()).isTrue();
+        assertThat(stored.get("canonicalPayload").asText()).isEqualTo("{}");
+        assertThat(verifyChain().get("intact").asBoolean()).isTrue();
+    }
+
+    @Test
+    @DisplayName("redacting a parent path covers nested leaves")
+    void parentPathRedactsNestedLeaves() throws Exception {
+        append("{\"account\":{\"number\":\"ACC-1\",\"type\":\"CHECKING\"},\"amount\":1}");
+
+        JsonNode redacted = redact(1, "/account");
+
+        assertThat(commitment(redacted, "/account/number").get("redacted").asBoolean())
+                .isTrue();
+        assertThat(commitment(redacted, "/account/type").get("redacted").asBoolean())
+                .isTrue();
+        assertThat(commitment(redacted, "/amount").get("redacted").asBoolean()).isFalse();
+        assertThat(verifyChain().get("intact").asBoolean()).isTrue();
+    }
+
+    @Test
+    @DisplayName("a parent path still redacts siblings after one child was already redacted")
+    void parentPathRedactsRemainingChildren() throws Exception {
+        append("{\"account\":{\"number\":\"ACC-1\",\"type\":\"CHECKING\"}}");
+        redact(1, "/account/number");
+
+        JsonNode redacted = redact(1, "/account");
+
+        assertThat(commitment(redacted, "/account/number").get("redacted").asBoolean())
+                .isTrue();
+        assertThat(commitment(redacted, "/account/type").get("redacted").asBoolean())
+                .isTrue();
+        assertThat(verifyChain().get("intact").asBoolean()).isTrue();
+    }
+
     private JsonNode append(String payloadJson) throws Exception {
         return read(mockMvc.perform(appendRequest("user-1", payloadJson, null)).andExpect(status().isCreated()));
     }

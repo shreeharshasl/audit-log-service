@@ -94,6 +94,118 @@ class ExportBundleFormatTest {
     }
 
     @Test
+    @DisplayName("a missing records field is rejected")
+    void rejectsNullRecordsField() {
+        JsonNode json = ExportBundleFormat.toJson(
+                ExportTestRecords.bundle(ExportTestRecords.record(1, HashFormat.GENESIS_CHAIN_HASH, "{\"ok\":true}")));
+        ((ObjectNode) json).remove("records");
+
+        assertThatThrownBy(() -> ExportBundleFormat.fromJson(json))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("records");
+    }
+
+    @Test
+    @DisplayName("a null record entry is rejected")
+    void rejectsNullRecordEntry() {
+        ObjectNode json = ExportBundleFormat.toJson(
+                ExportTestRecords.bundle(ExportTestRecords.record(1, HashFormat.GENESIS_CHAIN_HASH, "{\"ok\":true}")));
+        ((ArrayNode) json.get("records")).set(0, json.nullNode());
+
+        assertThatThrownBy(() -> ExportBundleFormat.fromJson(json))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("each record");
+    }
+
+    @Test
+    @DisplayName("a null commitment entry is rejected")
+    void rejectsNullCommitmentEntry() {
+        ObjectNode json = ExportBundleFormat.toJson(
+                ExportTestRecords.bundle(ExportTestRecords.record(1, HashFormat.GENESIS_CHAIN_HASH, "{\"ok\":true}")));
+        ((ArrayNode) json.get("records").get(0).get("commitments")).set(0, json.nullNode());
+
+        assertThatThrownBy(() -> ExportBundleFormat.fromJson(json))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("each commitment");
+    }
+
+    @Test
+    @DisplayName("non-textual required strings and non-boolean archived flags are rejected")
+    void rejectsWrongJsonTypes() {
+        ObjectNode json = ExportBundleFormat.toJson(
+                ExportTestRecords.bundle(ExportTestRecords.record(1, HashFormat.GENESIS_CHAIN_HASH, "{\"ok\":true}")));
+
+        ObjectNode eventTypeNumber = json.deepCopy();
+        ((ObjectNode) eventTypeNumber.get("records").get(0)).put("eventType", 1);
+        assertThatThrownBy(() -> ExportBundleFormat.fromJson(eventTypeNumber))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("eventType");
+
+        ObjectNode archivedString = json.deepCopy();
+        ((ObjectNode) archivedString.get("records").get(0)).put("archived", "yes");
+        assertThatThrownBy(() -> ExportBundleFormat.fromJson(archivedString))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("archived");
+
+        ObjectNode hashVersionText = json.deepCopy();
+        hashVersionText.put("hashVersion", "1");
+        assertThatThrownBy(() -> ExportBundleFormat.fromJson(hashVersionText))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("hashVersion");
+    }
+
+    @Test
+    @DisplayName("a record that is an array, not an object, is rejected")
+    void rejectsArrayRecordEntry() {
+        ObjectNode json = ExportBundleFormat.toJson(
+                ExportTestRecords.bundle(ExportTestRecords.record(1, HashFormat.GENESIS_CHAIN_HASH, "{\"ok\":true}")));
+        ArrayNode asArray = json.arrayNode();
+        asArray.add(1);
+        ((ArrayNode) json.get("records")).set(0, asArray);
+
+        assertThatThrownBy(() -> ExportBundleFormat.fromJson(json))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("each record");
+    }
+
+    @Test
+    @DisplayName("commitments that are an object rather than an array are rejected")
+    void rejectsObjectCommitmentsField() {
+        ObjectNode json = ExportBundleFormat.toJson(
+                ExportTestRecords.bundle(ExportTestRecords.record(1, HashFormat.GENESIS_CHAIN_HASH, "{\"ok\":true}")));
+        ((ObjectNode) json.get("records").get(0)).set("commitments", json.objectNode());
+
+        assertThatThrownBy(() -> ExportBundleFormat.fromJson(json))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("commitments");
+    }
+
+    @Test
+    @DisplayName("a non-numeric micros field falls back to the ISO timestamp")
+    void nonNumericMicrosFallsBackToIso() {
+        ExportedRecord record = ExportTestRecords.record(1, HashFormat.GENESIS_CHAIN_HASH, "{\"ok\":true}");
+        ObjectNode json = ExportBundleFormat.toJson(ExportTestRecords.bundle(record));
+        ((ObjectNode) json.get("records").get(0)).put("occurredAtMicros", "not-a-number");
+
+        ExportBundle parsed = ExportBundleFormat.fromJson(json);
+
+        assertThat(parsed.records().get(0).header().occurredAt())
+                .isEqualTo(record.header().occurredAt());
+    }
+
+    @Test
+    @DisplayName("a seq that cannot convert to a number is rejected")
+    void rejectsNonNumericSeq() {
+        ObjectNode json = ExportBundleFormat.toJson(
+                ExportTestRecords.bundle(ExportTestRecords.record(1, HashFormat.GENESIS_CHAIN_HASH, "{\"ok\":true}")));
+        ((ObjectNode) json.get("records").get(0)).put("seq", true);
+
+        assertThatThrownBy(() -> ExportBundleFormat.fromJson(json))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("seq");
+    }
+
+    @Test
     @DisplayName("null, non-object records, and missing typed fields are rejected")
     void rejectsMalformedShape() {
         JsonNode honest = ExportBundleFormat.toJson(

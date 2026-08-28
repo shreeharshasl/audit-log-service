@@ -1,9 +1,15 @@
 package com.auditlog.hashing;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.Mockito.mockStatic;
+
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.mockito.MockedStatic;
 
 class HashBuilderTest {
 
@@ -52,5 +58,18 @@ class HashBuilderTest {
                 .build();
 
         assertThat(first).isEqualTo(second).hasSize(32);
+    }
+
+    @Test
+    @DisplayName("a platform without SHA-256 fails visibly rather than producing a weaker digest")
+    void missingSha256IsFatal() {
+        try (MockedStatic<MessageDigest> digest = mockStatic(MessageDigest.class)) {
+            digest.when(() -> MessageDigest.getInstance("SHA-256")).thenThrow(new NoSuchAlgorithmException("missing"));
+
+            assertThatThrownBy(HashBuilder::newDigest)
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("SHA-256")
+                    .hasCauseInstanceOf(NoSuchAlgorithmException.class);
+        }
     }
 }

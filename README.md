@@ -131,6 +131,7 @@ limitation rather than quietly omitted.
 
 ## Documentation
 
+- `docs/how-it-works.md` — what the service does and what happens on each path
 - `docs/setup-and-api.md` — how to run the service and how each HTTP API works
 - `docs/adr/` — architecture decision records
 - `docs/ai-usage/` — AI assistance log with dispositions and rationale

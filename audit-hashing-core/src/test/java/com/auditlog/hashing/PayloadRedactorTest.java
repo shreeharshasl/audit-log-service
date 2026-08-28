@@ -242,4 +242,64 @@ class PayloadRedactorTest {
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("/tags/-1");
     }
+
+    @Test
+    @DisplayName("a non-numeric array index is a missing path")
+    void nonNumericArrayIndexIsMissing() {
+        JsonNode payload = CanonicalJson.parse("{\"tags\":[\"a\"]}");
+
+        assertThatThrownBy(() -> PayloadRedactor.removePaths(payload, List.of("/tags/abc")))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("/tags/abc");
+    }
+
+    @Test
+    @DisplayName("a nested pointer through a missing array slot is a missing path")
+    void nestedPointerThroughMissingArraySlotIsMissing() {
+        JsonNode payload = CanonicalJson.parse("{\"items\":[{\"secret\":\"x\"}]}");
+
+        assertThatThrownBy(() -> PayloadRedactor.removePaths(payload, List.of("/items/9/secret")))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("/items/9/secret");
+    }
+
+    @Test
+    @DisplayName("a nested pointer through a leading-zero array index is a missing path")
+    void nestedLeadingZeroArrayIndexIsMissing() {
+        JsonNode payload = CanonicalJson.parse("{\"items\":[{\"secret\":\"x\"}]}");
+
+        assertThatThrownBy(() -> PayloadRedactor.removePaths(payload, List.of("/items/01/secret")))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("/items/01/secret");
+    }
+
+    @Test
+    @DisplayName("a pointer three levels through a scalar is a missing path")
+    void pointerThroughScalarThenAnotherTokenIsMissing() {
+        JsonNode payload = CanonicalJson.parse("{\"amount\":1}");
+
+        assertThatThrownBy(() -> PayloadRedactor.removePaths(payload, List.of("/amount/x/y")))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("/amount/x/y");
+    }
+
+    @Test
+    @DisplayName("a null path in the list is rejected")
+    void rejectsNullPathInList() {
+        JsonNode payload = CanonicalJson.parse("{\"amount\":1}");
+
+        assertThatThrownBy(() -> PayloadRedactor.removePaths(payload, java.util.Arrays.asList((String) null)))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("path is required");
+    }
+
+    @Test
+    @DisplayName("redacting the last remaining array still leaves the originally empty sibling")
+    void prunesEmptiedNestedContainersButKeepsOriginalEmptyArrays() {
+        JsonNode payload = CanonicalJson.parse("{\"keep\":[],\"drop\":{\"n\":1}}");
+
+        JsonNode redacted = PayloadRedactor.removePaths(payload, List.of("/drop/n"));
+
+        assertThat(CanonicalJson.canonicalString(redacted)).isEqualTo("{\"keep\":[]}");
+    }
 }

@@ -98,6 +98,33 @@ class CanonicalJsonTest {
     void acceptsSafeIntegerBoundary() {
         assertThat(CanonicalJson.canonicalString(CanonicalJson.parse("{\"n\":9007199254740991}")))
                 .isEqualTo("{\"n\":9007199254740991}");
+        assertThat(CanonicalJson.canonicalString(CanonicalJson.parse("{\"n\":-9007199254740991}")))
+                .isEqualTo("{\"n\":-9007199254740991}");
+    }
+
+    @Test
+    @DisplayName("integers below the safe range are rejected")
+    void rejectsUnsafeNegativeIntegers() {
+        assertThatThrownBy(() -> CanonicalJson.canonicalString(CanonicalJson.parse("{\"n\":-9007199254740992}")))
+                .isInstanceOf(CanonicalJsonException.class)
+                .hasMessageContaining("safe range");
+    }
+
+    @Test
+    @DisplayName("a float at the root names the payload root in the error")
+    void floatAtRootNamesThePayloadRoot() {
+        assertThatThrownBy(() -> CanonicalJson.canonicalString(CanonicalJson.parse("10.5")))
+                .isInstanceOf(CanonicalJsonException.class)
+                .hasMessageContaining("the payload root");
+    }
+
+    @Test
+    @DisplayName("binary JSON nodes are not a supported payload type")
+    void rejectsBinaryNodes() {
+        assertThatThrownBy(() -> CanonicalJson.canonicalString(
+                        com.fasterxml.jackson.databind.node.JsonNodeFactory.instance.binaryNode(new byte[] {1, 2})))
+                .isInstanceOf(CanonicalJsonException.class)
+                .hasMessageContaining("unsupported JSON node type");
     }
 
     @Test

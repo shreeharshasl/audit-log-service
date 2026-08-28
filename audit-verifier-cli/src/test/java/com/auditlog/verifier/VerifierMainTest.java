@@ -96,6 +96,44 @@ class VerifierMainTest {
         assertThat(capture.err()).contains("failed to verify");
     }
 
+    @Test
+    @DisplayName("null arguments print usage and exit 2")
+    void nullArgsExitTwo() {
+        Capture capture = captureRaw(null);
+
+        assertThat(capture.code()).isEqualTo(2);
+        assertThat(capture.err()).contains("usage:");
+    }
+
+    @Test
+    @DisplayName("a directory is not a bundle file")
+    void directoryExitsTwo() {
+        Capture capture = capture(temp.toString());
+
+        assertThat(capture.code()).isEqualTo(2);
+        assertThat(capture.err()).contains("not a file");
+    }
+
+    @Test
+    @DisplayName("JSON that is not a bundle exits 2")
+    void invalidBundleShapeExitsTwo() throws Exception {
+        Path file = temp.resolve("not-a-bundle.json");
+        Files.writeString(file, "{\"hashVersion\":\"nope\"}");
+
+        Capture capture = capture(file.toString());
+
+        assertThat(capture.code()).isEqualTo(2);
+        assertThat(capture.err()).contains("failed to verify");
+    }
+
+    @Test
+    @DisplayName("main on an honest bundle returns without exiting the process")
+    void mainOnHonestBundleDoesNotExit() throws Exception {
+        Path file = write(temp.resolve("main-bundle.json"), honestRecord());
+
+        VerifierMain.main(new String[] {file.toString()});
+    }
+
     private static Path write(Path file, ExportedRecord record) throws Exception {
         String manifest = Hex.encode(ExportHasher.manifestHash(HashFormat.VERSION, 1, 1, List.of(record.toLink())));
         Files.writeString(
@@ -132,6 +170,10 @@ class VerifierMainTest {
     }
 
     private static Capture capture(String... args) {
+        return captureRaw(args);
+    }
+
+    private static Capture captureRaw(String[] args) {
         ByteArrayOutputStream out = new ByteArrayOutputStream();
         ByteArrayOutputStream err = new ByteArrayOutputStream();
         int code = VerifierMain.run(

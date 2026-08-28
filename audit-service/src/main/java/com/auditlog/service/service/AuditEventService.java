@@ -29,12 +29,12 @@ import com.auditlog.service.repository.AuditEventRepository;
 @Service
 public class AuditEventService {
 
-    private final AuditEventRepository repository;
+    private final AuditEventRepository events;
     private final PayloadCommitter committer;
     private final Clock clock;
 
-    public AuditEventService(AuditEventRepository repository, PayloadCommitter committer, Clock clock) {
-        this.repository = repository;
+    public AuditEventService(AuditEventRepository events, PayloadCommitter committer, Clock clock) {
+        this.events = events;
         this.committer = committer;
         this.clock = clock;
     }
@@ -60,10 +60,10 @@ public class AuditEventService {
         Instant occurredAt = event.occurredAt().truncatedTo(ChronoUnit.MICROS);
         Instant recordedAt = clock.instant().truncatedTo(ChronoUnit.MICROS);
 
-        ChainHead head = repository.lockChainHead();
+        ChainHead head = events.lockChainHead();
 
         // Safe as a check-then-act only because the lock above serializes every append.
-        if (repository.existsByEventId(eventId)) {
+        if (events.existsByEventId(eventId)) {
             throw new DuplicateEventException(eventId);
         }
 
@@ -92,27 +92,27 @@ public class AuditEventService {
                 null);
 
         try {
-            repository.insert(record);
+            events.insert(record);
         } catch (DuplicateKeyException e) {
             throw new DuplicateEventException(eventId);
         }
-        repository.insertCommitments(record.seq(), committed.fields());
-        repository.advanceChainHead(record.seq(), record.chainHashHex());
+        events.insertCommitments(record.seq(), committed.fields());
+        events.advanceChainHead(record.seq(), record.chainHashHex());
         return record;
     }
 
     @Transactional(readOnly = true)
     public AuditRecord findBySeq(long seq) {
-        return repository.findBySeq(seq).orElseThrow(() -> new EventNotFoundException(seq));
+        return events.findBySeq(seq).orElseThrow(() -> new EventNotFoundException(seq));
     }
 
     @Transactional(readOnly = true)
     public List<FieldCommitment> findCommitments(long seq) {
-        return repository.findCommitments(seq);
+        return events.findCommitments(seq);
     }
 
     @Transactional(readOnly = true)
     public long latestSeq() {
-        return repository.latestSeq();
+        return events.latestSeq();
     }
 }

@@ -26,10 +26,10 @@ import com.fasterxml.jackson.databind.JsonNode;
 @Service
 public class RedactionService {
 
-    private final AuditEventRepository repository;
+    private final AuditEventRepository events;
 
-    public RedactionService(AuditEventRepository repository) {
-        this.repository = repository;
+    public RedactionService(AuditEventRepository events) {
+        this.events = events;
     }
 
     @Transactional
@@ -37,12 +37,12 @@ public class RedactionService {
         if (paths == null || paths.isEmpty()) {
             throw new IllegalArgumentException("at least one path is required");
         }
-        AuditRecord record = repository.lockBySeq(seq).orElseThrow(() -> new EventNotFoundException(seq));
+        AuditRecord record = events.lockBySeq(seq).orElseThrow(() -> new EventNotFoundException(seq));
         if (record.archived()) {
             throw EventConflictException.archived(seq);
         }
 
-        List<FieldCommitment> commitments = repository.findCommitments(seq);
+        List<FieldCommitment> commitments = events.findCommitments(seq);
         Set<String> requested = new LinkedHashSet<>(paths);
         List<String> leavesToRedact = new ArrayList<>();
         for (String path : requested) {
@@ -63,11 +63,11 @@ public class RedactionService {
 
         List<String> jsonPaths = collapseToAncestors(requested);
         JsonNode updated = PayloadRedactor.removePaths(CanonicalJson.parse(record.canonicalPayload()), jsonPaths);
-        repository.updateCanonicalPayload(seq, CanonicalJson.canonicalString(updated));
+        events.updateCanonicalPayload(seq, CanonicalJson.canonicalString(updated));
         for (String leaf : leavesToRedact) {
-            repository.redactCommitment(seq, leaf);
+            events.redactCommitment(seq, leaf);
         }
-        return repository.findBySeq(seq).orElseThrow(() -> new EventNotFoundException(seq));
+        return events.findBySeq(seq).orElseThrow(() -> new EventNotFoundException(seq));
     }
 
     static boolean matchesPath(String fieldPath, String requested) {
