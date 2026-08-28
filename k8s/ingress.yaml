@@ -1,0 +1,30 @@
+# Optional. Apply after an ingress controller is installed:
+#   kubectl apply -f k8s/ingress.yaml
+#
+# Replace the host. TLS is terminated here; the Service stays HTTP on 8080.
+# Keep the path prefix /audit-service/api — it is the application context path.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: auditlog-service
+  namespace: auditlog
+  labels:
+    app.kubernetes.io/name: audit-service
+    app.kubernetes.io/component: api
+    app.kubernetes.io/part-of: audit-log-service
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: auditlog.example.com
+      http:
+        paths:
+          - path: /audit-service/api
+            pathType: Prefix
+            backend:
+              service:
+                name: auditlog-service
+                port:
+                  number: 8080
+  # tls:
+  #   - hosts: [auditlog.example.com]
+  #     secretName: auditlog-tls

@@ -1,0 +1,30 @@
+# Deploy the API and an in-cluster PostgreSQL 16.
+#
+#   docker build --target audit-service -t audit-log-service:0.1.0 .
+#   # kind: kind load docker-image audit-log-service:0.1.0
+#   # minikube: minikube image load audit-log-service:0.1.0
+#
+# Edit secret.yaml (passwords and bootstrap key) before applying:
+#   kubectl apply -k k8s/
+#
+# For a managed database, drop postgres.yaml from resources below and set
+# AUDIT_DB_URL in configmap.yaml to that instance (sslmode=require).
+#
+# Optional public URL (needs an ingress controller):
+#   kubectl apply -f k8s/ingress.yaml
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: auditlog
+
+resources:
+  - namespace.yaml
+  - configmap.yaml
+  - secret.yaml
+  - postgres.yaml
+  - audit-service.yaml
+
+images:
+  - name: audit-log-service
+    newName: audit-log-service
+    newTag: "0.1.0"

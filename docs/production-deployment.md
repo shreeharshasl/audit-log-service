@@ -286,6 +286,37 @@ front, sticky sessions off.
 
 Do **not** give each replica its own database. That would be two logs, not one.
 
+### 7.4 Kubernetes
+
+Manifests live in `k8s/`. They start PostgreSQL 16 (StatefulSet) and the API (Deployment) in
+namespace `auditlog`.
+
+1. Build and load the image into the cluster:
+
+```bash
+docker build --target audit-service -t audit-log-service:0.1.0 .
+# kind load docker-image audit-log-service:0.1.0
+# minikube image load audit-log-service:0.1.0
+```
+
+2. Put real values in `k8s/secret.yaml` (`CHANGE_ME` is not a password). `AUDIT_DB_PASSWORD`
+   must match `POSTGRES_PASSWORD` when using the in-cluster database.
+
+3. Apply:
+
+```bash
+kubectl apply -k k8s/
+kubectl -n auditlog rollout status deployment/auditlog-service
+kubectl -n auditlog port-forward svc/auditlog-service 8080:8080
+```
+
+Health: `GET http://127.0.0.1:8080/audit-service/api/actuator/health`
+
+Postgres is ClusterIP only. For a managed database, remove `postgres.yaml` from
+`k8s/kustomization.yaml` and set `AUDIT_DB_URL` in `k8s/configmap.yaml` to that instance
+(`sslmode=require`). Public HTTPS is optional: edit the host in `k8s/ingress.yaml` and apply it
+once an ingress controller exists.
+
 ---
 
 ## 8. Edge and HTTP

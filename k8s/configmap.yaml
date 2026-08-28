@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: auditlog-config
+  labels:
+    app.kubernetes.io/part-of: audit-log-service
+data:
+  AUDIT_PORT: "8080"
+  AUDIT_OPEN_DOCS: "false"
+  # In-cluster Postgres Service DNS. For a managed database, replace this URL
+  # and add ?sslmode=require (and remove postgres.yaml from kustomization).
+  AUDIT_DB_URL: jdbc:postgresql://auditlog-postgres:5432/auditlog
+  POSTGRES_DB: auditlog

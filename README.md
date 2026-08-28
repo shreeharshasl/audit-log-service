@@ -135,5 +135,6 @@ limitation rather than quietly omitted.
 
 - `docs/setup-and-api.md` — how to run the service locally and how each HTTP API works
 - `docs/production-deployment.md` — what is required to deploy this to production
+- `k8s/` — Kubernetes manifests (`kubectl apply -k k8s/`)
 - `docs/adr/` — architecture decision records
 - `docs/ai-usage/` — AI assistance log with dispositions and rationale
