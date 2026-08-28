@@ -4,6 +4,7 @@ import java.io.IOException;
 import java.io.PrintStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.function.IntConsumer;
 
 import com.auditlog.hashing.BundleVerifier;
 import com.auditlog.hashing.ExportBundle;
@@ -22,9 +23,13 @@ public final class VerifierMain {
     private VerifierMain() {}
 
     public static void main(String[] args) {
-        int code = run(args, System.out, System.err);
+        runAndExit(args, System.out, System.err, System::exit);
+    }
+
+    static void runAndExit(String[] args, PrintStream out, PrintStream err, IntConsumer onFailure) {
+        int code = run(args, out, err);
         if (code != 0) {
-            System.exit(code);
+            onFailure.accept(code);
         }
     }
 

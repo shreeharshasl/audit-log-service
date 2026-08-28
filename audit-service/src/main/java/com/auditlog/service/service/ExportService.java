@@ -33,27 +33,32 @@ public class ExportService {
     private final AuditEventRepository events;
     private final ExportRepository exports;
     private final Clock clock;
+    private final PrivilegedActionAuditor auditor;
 
-    public ExportService(AuditEventRepository events, ExportRepository exports, Clock clock) {
+    public ExportService(
+            AuditEventRepository events, ExportRepository exports, Clock clock, PrivilegedActionAuditor auditor) {
         this.events = events;
         this.exports = exports;
         this.clock = clock;
+        this.auditor = auditor;
     }
 
     @Transactional
-    public GeneratedExport create(long fromSeq, long toSeq) {
+    public GeneratedExport create(long fromSeq, long toSeq, String actorId) {
         ExportBundle bundle = bundleFor(fromSeq, toSeq);
         Instant createdAt = clock.instant().truncatedTo(ChronoUnit.MICROS);
         UUID exportId = UUID.randomUUID();
         exports.insert(new ExportMetadata(
                 exportId, fromSeq, toSeq, bundle.records().size(), bundle.manifestHashHex(), createdAt));
+        auditor.exportCreated(actorId, exportId, fromSeq, toSeq);
         return new GeneratedExport(exportId, createdAt, bundle);
     }
 
-    @Transactional(readOnly = true)
-    public GeneratedExport regenerate(UUID exportId) {
+    @Transactional
+    public GeneratedExport regenerate(UUID exportId, String actorId) {
         ExportMetadata metadata = exports.findById(exportId).orElseThrow(() -> new ExportNotFoundException(exportId));
         ExportBundle bundle = bundleFor(metadata.fromSeq(), metadata.toSeq());
+        auditor.exportRead(actorId, metadata.exportId(), metadata.fromSeq(), metadata.toSeq());
         return new GeneratedExport(metadata.exportId(), metadata.createdAt(), bundle);
     }
 

@@ -165,6 +165,14 @@ class EventHasherTest {
     }
 
     @Test
+    @DisplayName("digest equality is length-independent, so a truncated hash cannot sneak through")
+    void matchesUsesConstantTimeCompare() {
+        byte[] digest = sha("same");
+        assertThat(EventHasher.matches(digest, digest.clone())).isTrue();
+        assertThat(EventHasher.matches(digest, sha("other"))).isFalse();
+    }
+
+    @Test
     @DisplayName("every header field is required, because all of them are hashed")
     void rejectsMissingHeaderFields() {
         assertThatThrownBy(() -> new AuditEventHeader(null, "TYPE", "actor", "RESOURCE", "id", OCCURRED, RECORDED))

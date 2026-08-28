@@ -30,10 +30,6 @@ public final class PayloadCommitter {
         this(new PayloadFlattener(), new SecureRandom());
     }
 
-    public PayloadCommitter(PayloadLimits limits) {
-        this(new PayloadFlattener(limits), new SecureRandom());
-    }
-
     /** Commits every position in the payload under a fresh random salt. */
     public CommittedPayload commit(JsonNode payload) {
         List<PayloadLeaf> leaves = flattener.flatten(payload);

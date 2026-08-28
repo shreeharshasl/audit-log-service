@@ -9,3 +9,8 @@ spring:
   flyway:
     enabled: true
     locations: classpath:db/migration
+
+audit:
+  security:
+    bootstrap-key: test-admin-key-not-for-production
+    open-docs: true

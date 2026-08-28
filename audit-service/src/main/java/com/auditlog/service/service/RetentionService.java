@@ -26,11 +26,17 @@ public class RetentionService {
     private final RetentionPolicyRepository policyRepository;
     private final AuditEventRepository events;
     private final Clock clock;
+    private final PrivilegedActionAuditor auditor;
 
-    public RetentionService(RetentionPolicyRepository policyRepository, AuditEventRepository events, Clock clock) {
+    public RetentionService(
+            RetentionPolicyRepository policyRepository,
+            AuditEventRepository events,
+            Clock clock,
+            PrivilegedActionAuditor auditor) {
         this.policyRepository = policyRepository;
         this.events = events;
         this.clock = clock;
+        this.auditor = auditor;
     }
 
     @Transactional(readOnly = true)
@@ -39,15 +45,18 @@ public class RetentionService {
     }
 
     @Transactional
-    public RetentionPolicy updatePolicy(int retainDays) {
+    public RetentionPolicy updatePolicy(int retainDays, String actorId) {
         if (retainDays < 1 || retainDays > 36_500) {
             throw new IllegalArgumentException("retainDays must be between 1 and 36500");
         }
-        return policyRepository.update(retainDays, clock.instant().truncatedTo(ChronoUnit.MICROS));
+        RetentionPolicy policy =
+                policyRepository.update(retainDays, clock.instant().truncatedTo(ChronoUnit.MICROS));
+        auditor.policyUpdated(actorId, retainDays);
+        return policy;
     }
 
     @Transactional
-    public RetentionApplication apply() {
+    public RetentionApplication apply(String actorId) {
         RetentionPolicy policy = policyRepository.find();
         Instant cutoff = clock.instant().minus(policy.retainDays(), ChronoUnit.DAYS);
         List<Long> seqs = events.findSeqsEligibleForArchive(cutoff);
@@ -57,7 +66,9 @@ public class RetentionService {
             archive(seq, archivedAt);
             archived++;
         }
-        return new RetentionApplication(archived, policy.retainDays(), cutoff);
+        RetentionApplication result = new RetentionApplication(archived, policy.retainDays(), cutoff);
+        auditor.retentionApplied(actorId, archived, policy.retainDays());
+        return result;
     }
 
     private void archive(long seq, Instant archivedAt) {

@@ -178,4 +178,11 @@ class ValidationEdgeCaseTest {
         assertThat(checks).singleElement().satisfies(c -> assertThat(c.status())
                 .isEqualTo(PayloadCommitter.CommitmentCheck.Status.UNCOMMITTED_FIELD));
     }
+
+    @Test
+    @DisplayName("domain tags are frozen constants")
+    void domainTagsAreDistinct() {
+        assertThat(DomainTag.CHECKPOINT).isNotEqualTo(DomainTag.CONTENT);
+        assertThat(DomainTag.EXPORT_MANIFEST).isNotEqualTo(DomainTag.CHAIN);
+    }
 }

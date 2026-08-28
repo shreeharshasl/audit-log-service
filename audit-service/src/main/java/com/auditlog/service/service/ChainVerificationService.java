@@ -28,11 +28,11 @@ import com.auditlog.service.repository.AuditEventRepository;
 @Service
 public class ChainVerificationService {
 
-    private final AuditEventRepository repository;
+    private final AuditEventRepository events;
     private final PayloadCommitter committer;
 
-    public ChainVerificationService(AuditEventRepository repository, PayloadCommitter committer) {
-        this.repository = repository;
+    public ChainVerificationService(AuditEventRepository events, PayloadCommitter committer) {
+        this.events = events;
         this.committer = committer;
     }
 
@@ -41,23 +41,16 @@ public class ChainVerificationService {
         if (fromSeq < 1 || toSeq < fromSeq) {
             throw new IllegalArgumentException("fromSeq must be at least 1 and no greater than toSeq");
         }
-        List<AuditRecord> records = repository.findRange(fromSeq, toSeq);
+        List<AuditRecord> records = events.findRange(fromSeq, toSeq);
         List<ChainViolation> violations = new ArrayList<>();
 
         String previousChainHash = null;
         long expectedSeq = fromSeq;
-        long writtenHead = repository.latestSeq();
+        long writtenHead = events.latestSeq();
         long expectedUntil = Math.min(toSeq, writtenHead);
 
         for (AuditRecord record : records) {
-            while (expectedSeq < record.seq() && expectedSeq <= expectedUntil) {
-                violations.add(new ChainViolation(
-                        expectedSeq,
-                        ChainViolation.Type.UNAUTHORIZED_ARCHIVE,
-                        "sequence %d is missing; records cannot be deleted, only archived in place"
-                                .formatted(expectedSeq)));
-                expectedSeq++;
-            }
+            reportMissingSeqs(expectedSeq, Math.min(record.seq() - 1, expectedUntil), violations);
             expectedSeq = record.seq() + 1;
 
             byte[] recomputedContent = verifyContentHash(record, violations);
@@ -67,16 +60,18 @@ public class ChainVerificationService {
 
             previousChainHash = record.chainHashHex();
         }
-        while (expectedSeq <= expectedUntil) {
-            violations.add(new ChainViolation(
-                    expectedSeq,
-                    ChainViolation.Type.UNAUTHORIZED_ARCHIVE,
-                    "sequence %d is missing; records cannot be deleted, only archived in place"
-                            .formatted(expectedSeq)));
-            expectedSeq++;
-        }
+        reportMissingSeqs(expectedSeq, expectedUntil, violations);
 
         return new ChainVerificationResult(fromSeq, toSeq, records.size(), violations);
+    }
+
+    private static void reportMissingSeqs(long from, long until, List<ChainViolation> violations) {
+        for (long seq = from; seq <= until; seq++) {
+            violations.add(new ChainViolation(
+                    seq,
+                    ChainViolation.Type.UNAUTHORIZED_ARCHIVE,
+                    "sequence %d is missing; records cannot be deleted, only archived in place".formatted(seq)));
+        }
     }
 
     private byte[] verifyContentHash(AuditRecord record, List<ChainViolation> violations) {
@@ -125,7 +120,7 @@ public class ChainVerificationService {
     }
 
     private void verifyPayload(AuditRecord record, List<ChainViolation> violations) {
-        List<FieldCommitment> stored = repository.findCommitments(record.seq());
+        List<FieldCommitment> stored = events.findCommitments(record.seq());
 
         String recomputedRoot = Hex.encode(PayloadCommitter.payloadRoot(stored));
         if (!recomputedRoot.equals(record.payloadRootHex())) {

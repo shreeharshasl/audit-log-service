@@ -90,6 +90,34 @@
     <Bug pattern="EI_EXPOSE_REP2"/>
   </Match>
   <Match>
+    <Class name="com.auditlog.service.repository.ApiClientRepository"/>
+    <Bug pattern="EI_EXPOSE_REP2"/>
+  </Match>
+  <Match>
+    <Class name="com.auditlog.service.service.ApiClientService"/>
+    <Bug pattern="EI_EXPOSE_REP2"/>
+  </Match>
+  <Match>
+    <Class name="com.auditlog.service.service.PrivilegedActionAuditor"/>
+    <Bug pattern="EI_EXPOSE_REP2"/>
+  </Match>
+  <Match>
+    <Class name="com.auditlog.service.config.ApiClientBootstrap"/>
+    <Bug pattern="EI_EXPOSE_REP2"/>
+  </Match>
+  <Match>
+    <Class name="com.auditlog.service.controller.JsonAuthenticationEntryPoint"/>
+    <Bug pattern="EI_EXPOSE_REP2"/>
+  </Match>
+  <Match>
+    <Class name="com.auditlog.service.controller.JsonAccessDeniedHandler"/>
+    <Bug pattern="EI_EXPOSE_REP2"/>
+  </Match>
+  <Match>
+    <Class name="com.auditlog.service.controller.ApiKeyAuthenticationFilter"/>
+    <Bug pattern="EI_EXPOSE_REP2"/>
+  </Match>
+  <Match>
     <Class name="com.auditlog.hashing.BundleVerifier"/>
     <Bug pattern="EI_EXPOSE_REP2"/>
   </Match>

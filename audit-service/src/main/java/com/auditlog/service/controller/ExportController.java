@@ -6,6 +6,7 @@ import java.util.UUID;
 import jakarta.validation.Valid;
 
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -31,8 +32,9 @@ public class ExportController {
     }
 
     @PostMapping
+    @PreAuthorize("hasRole('EXPORT')")
     public ResponseEntity<ObjectNode> create(@Valid @RequestBody CreateExportRequest request) {
-        GeneratedExport generated = exportService.create(request.fromSeq(), request.toSeq());
+        GeneratedExport generated = exportService.create(request.fromSeq(), request.toSeq(), CurrentApiClient.name());
         URI location = ServletUriComponentsBuilder.fromCurrentContextPath()
                 .path("/v1/exports/{id}")
                 .buildAndExpand(generated.exportId())
@@ -41,8 +43,9 @@ public class ExportController {
     }
 
     @GetMapping("/{exportId}")
+    @PreAuthorize("hasRole('EXPORT')")
     public ObjectNode regenerate(@PathVariable("exportId") UUID exportId) {
-        return toJson(exportService.regenerate(exportId));
+        return toJson(exportService.regenerate(exportId, CurrentApiClient.name()));
     }
 
     private static ObjectNode toJson(GeneratedExport generated) {

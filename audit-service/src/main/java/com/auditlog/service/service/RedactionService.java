@@ -26,23 +26,25 @@ import com.fasterxml.jackson.databind.JsonNode;
 @Service
 public class RedactionService {
 
-    private final AuditEventRepository repository;
+    private final AuditEventRepository events;
+    private final PrivilegedActionAuditor auditor;
 
-    public RedactionService(AuditEventRepository repository) {
-        this.repository = repository;
+    public RedactionService(AuditEventRepository events, PrivilegedActionAuditor auditor) {
+        this.events = events;
+        this.auditor = auditor;
     }
 
     @Transactional
-    public AuditRecord redact(long seq, List<String> paths) {
+    public AuditRecord redact(long seq, List<String> paths, String actorId) {
         if (paths == null || paths.isEmpty()) {
             throw new IllegalArgumentException("at least one path is required");
         }
-        AuditRecord record = repository.lockBySeq(seq).orElseThrow(() -> new EventNotFoundException(seq));
+        AuditRecord record = events.lockBySeq(seq).orElseThrow(() -> new EventNotFoundException(seq));
         if (record.archived()) {
             throw EventConflictException.archived(seq);
         }
 
-        List<FieldCommitment> commitments = repository.findCommitments(seq);
+        List<FieldCommitment> commitments = events.findCommitments(seq);
         Set<String> requested = new LinkedHashSet<>(paths);
         List<String> leavesToRedact = new ArrayList<>();
         for (String path : requested) {
@@ -62,12 +64,15 @@ public class RedactionService {
         }
 
         List<String> jsonPaths = collapseToAncestors(requested);
-        JsonNode updated = PayloadRedactor.removePaths(CanonicalJson.parse(record.canonicalPayload()), jsonPaths);
-        repository.updateCanonicalPayload(seq, CanonicalJson.canonicalString(updated));
+        JsonNode redactedPayload =
+                PayloadRedactor.removePaths(CanonicalJson.parse(record.canonicalPayload()), jsonPaths);
+        events.updateCanonicalPayload(seq, CanonicalJson.canonicalString(redactedPayload));
         for (String leaf : leavesToRedact) {
-            repository.redactCommitment(seq, leaf);
+            events.redactCommitment(seq, leaf);
         }
-        return repository.findBySeq(seq).orElseThrow(() -> new EventNotFoundException(seq));
+        AuditRecord stored = events.findBySeq(seq).orElseThrow(() -> new EventNotFoundException(seq));
+        auditor.redacted(actorId, seq, jsonPaths);
+        return stored;
     }
 
     static boolean matchesPath(String fieldPath, String requested) {

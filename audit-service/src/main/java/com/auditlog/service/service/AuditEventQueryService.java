@@ -18,11 +18,11 @@ import com.auditlog.service.repository.AuditEventRepository;
 @Service
 public class AuditEventQueryService {
 
-    private final AuditEventRepository repository;
+    private final AuditEventRepository events;
     private final AuditProperties properties;
 
-    public AuditEventQueryService(AuditEventRepository repository, AuditProperties properties) {
-        this.repository = repository;
+    public AuditEventQueryService(AuditEventRepository events, AuditProperties properties) {
+        this.events = events;
         this.properties = properties;
     }
 
@@ -31,7 +31,7 @@ public class AuditEventQueryService {
         validate(query);
         AuditEventQuery filters = normalize(query);
         int pageSize = properties.query().resolvePageSize(query.requestedPageSize());
-        List<AuditRecord> fetched = repository.findPage(filters, pageSize + 1);
+        List<AuditRecord> fetched = events.findPage(filters, pageSize + 1);
         boolean hasMore = fetched.size() > pageSize;
         List<AuditRecord> items = hasMore ? List.copyOf(fetched.subList(0, pageSize)) : fetched;
         Long nextBeforeSeq = hasMore ? items.getLast().seq() : null;

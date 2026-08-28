@@ -63,6 +63,7 @@ Compose defaults:
 | `AUDIT_DB_PASSWORD` | `audit` | Postgres password |
 | `POSTGRES_HOST_PORT` | `5432` | Host port mapped to Postgres |
 | `AUDIT_PORT` | `8080` | Host port mapped to the API |
+| `AUDIT_BOOTSTRAP_API_KEY` | `dev-local-key` | Seeded API key for the `bootstrap` client |
 
 Flyway runs on startup and creates the schema. You do not run SQL by hand.
 
@@ -151,6 +152,8 @@ Expected: `{"status":"UP"}`.
 | `AUDIT_DB_USER` | OS username (`scripts/env.sh`) | Database user |
 | `AUDIT_DB_PASSWORD` | empty | Database password |
 | `AUDIT_PORT` | `8080` | HTTP port |
+| `AUDIT_BOOTSTRAP_API_KEY` | `dev-local-key` | Seeded API key (hashed on startup into `api_client`) |
+| `AUDIT_OPEN_DOCS` | `true` | When true, Swagger UI does not require a key |
 | `AUDIT_TEST_DB_URL` | `jdbc:postgresql://localhost:5432/auditlog_test` | Integration tests only |
 
 ---
@@ -187,17 +190,37 @@ Payload rules that apply to append:
 - Depth, leaf count, string length, and total canonical size are capped (see `audit.payload` in
   `application.yml`).
 
-Authentication is out of scope: every endpoint is open.
+Authentication is **hashed API keys with roles**. Send `X-API-Key` (or `Authorization: Bearer`)
+on every path except `/actuator/health`. The default local/Compose key is `dev-local-key`. The
+plaintext is never stored: startup hashes it and upserts the `bootstrap` client with every role.
+A missing or unknown key is `401 unauthorized`; a valid key without the role for that path is
+`403 forbidden`. Redaction, retention policy/apply, and export create/read each append an
+`audit.*` event so the privileged action is itself on the chain.
 
 ---
 
 ## 3. APIs, step by step
 
-All examples assume the default base:
+All examples assume the default base and the local bootstrap key:
 
 ```
-http://localhost:8080/audit-service/api
+BASE=http://localhost:8080/audit-service/api
+API_KEY=dev-local-key
 ```
+
+Use `-H "X-API-Key: $API_KEY"` on every call except health.
+
+| Path | Role |
+| --- | --- |
+| `POST /v1/audit-events` | `APPEND` |
+| `GET /v1/audit-events`, `GET /v1/audit-events/{seq}` | `READ` |
+| `GET /v1/chain/verify` | `VERIFY` |
+| `POST /v1/audit-events/{seq}/redactions` | `REDACT` |
+| `/v1/retention/**` | `RETAIN` |
+| `/v1/exports/**` | `EXPORT` |
+| `GET /v1/compliance/report` | `COMPLIANCE` |
+| `GET /` | any authenticated client |
+| `GET /actuator/health` | none |
 
 ### 3.1 `GET /` — service index
 
@@ -205,7 +228,7 @@ http://localhost:8080/audit-service/api
 endpoints. No database access.
 
 ```bash
-curl -sS http://localhost:8080/audit-service/api/
+curl -sS -H "X-API-Key: $API_KEY" http://localhost:8080/audit-service/api/
 ```
 
 **You get.** JSON with `service`, `health`, `docs`, `appendEvents`, `getEvent`, `listEvents`,
@@ -267,7 +290,7 @@ open http://localhost:8080/audit-service/api/swagger-ui.html
 **Example — first event (service assigns `eventId`)**
 
 ```bash
-curl -sS -D - http://localhost:8080/audit-service/api/v1/audit-events \
+curl -sS -D - -H "X-API-Key: $API_KEY" http://localhost:8080/audit-service/api/v1/audit-events \
   -H 'Content-Type: application/json' \
   -d '{
     "eventType": "account.updated",
@@ -285,7 +308,7 @@ curl -sS -D - http://localhost:8080/audit-service/api/v1/audit-events \
 **Example — second event, so the chain has a predecessor**
 
 ```bash
-curl -sS http://localhost:8080/audit-service/api/v1/audit-events \
+curl -sS -H "X-API-Key: $API_KEY" http://localhost:8080/audit-service/api/v1/audit-events \
   -H 'Content-Type: application/json' \
   -d '{
     "eventType": "account.updated",
@@ -302,7 +325,7 @@ curl -sS http://localhost:8080/audit-service/api/v1/audit-events \
 **Example — caller-supplied `eventId` (safe retry)**
 
 ```bash
-curl -sS -D - http://localhost:8080/audit-service/api/v1/audit-events \
+curl -sS -D - -H "X-API-Key: $API_KEY" http://localhost:8080/audit-service/api/v1/audit-events \
   -H 'Content-Type: application/json' \
   -d '{
     "eventId": "11111111-1111-1111-1111-111111111111",
@@ -329,7 +352,7 @@ Repeating the same `eventId` returns **`409 duplicate_event`**.
 Floats are rejected on purpose:
 
 ```bash
-curl -sS -D - http://localhost:8080/audit-service/api/v1/audit-events \
+curl -sS -D - -H "X-API-Key: $API_KEY" http://localhost:8080/audit-service/api/v1/audit-events \
   -H 'Content-Type: application/json' \
   -d '{
     "eventType": "account.updated",
@@ -363,7 +386,7 @@ so a page stays stable as new events arrive.
 **Step 1 — first page**
 
 ```bash
-curl -sS 'http://localhost:8080/audit-service/api/v1/audit-events?limit=2'
+curl -sS -H "X-API-Key: $API_KEY" 'http://localhost:8080/audit-service/api/v1/audit-events?limit=2'
 ```
 
 **You get.**
@@ -386,15 +409,15 @@ If `hasMore` is `false`, you are on the last page and `nextBeforeSeq` is omitted
 Pass the previous `nextBeforeSeq` as `beforeSeq`:
 
 ```bash
-curl -sS 'http://localhost:8080/audit-service/api/v1/audit-events?beforeSeq=2&limit=2'
+curl -sS -H "X-API-Key: $API_KEY" 'http://localhost:8080/audit-service/api/v1/audit-events?beforeSeq=2&limit=2'
 ```
 
 **Filters**
 
 ```bash
-curl -sS 'http://localhost:8080/audit-service/api/v1/audit-events?actorId=user-1&limit=50'
-curl -sS 'http://localhost:8080/audit-service/api/v1/audit-events?eventType=account.updated'
-curl -sS 'http://localhost:8080/audit-service/api/v1/audit-events?resourceType=account&resourceId=acc-1'
+curl -sS -H "X-API-Key: $API_KEY" 'http://localhost:8080/audit-service/api/v1/audit-events?actorId=user-1&limit=50'
+curl -sS -H "X-API-Key: $API_KEY" 'http://localhost:8080/audit-service/api/v1/audit-events?eventType=account.updated'
+curl -sS -H "X-API-Key: $API_KEY" 'http://localhost:8080/audit-service/api/v1/audit-events?resourceType=account&resourceId=acc-1'
 ```
 
 `resourceId` without `resourceType` returns **`400 invalid_request`**. `beforeSeq` below 1 does
@@ -410,7 +433,7 @@ An empty log returns `{"items":[],"hasMore":false}`.
 would hand to an offline verifier: header, canonical payload bytes, hashes, and per-field salts.
 
 ```bash
-curl -sS http://localhost:8080/audit-service/api/v1/audit-events/1
+curl -sS -H "X-API-Key: $API_KEY" http://localhost:8080/audit-service/api/v1/audit-events/1
 ```
 
 **Success (`200`).** In addition to the list-summary fields:
@@ -449,7 +472,7 @@ yet).
 **Step 1 — verify everything**
 
 ```bash
-curl -sS http://localhost:8080/audit-service/api/v1/chain/verify
+curl -sS -H "X-API-Key: $API_KEY" http://localhost:8080/audit-service/api/v1/chain/verify
 ```
 
 **Intact chain.**
@@ -467,7 +490,7 @@ curl -sS http://localhost:8080/audit-service/api/v1/chain/verify
 **Step 2 — verify a slice**
 
 ```bash
-curl -sS 'http://localhost:8080/audit-service/api/v1/chain/verify?fromSeq=1&toSeq=2'
+curl -sS -H "X-API-Key: $API_KEY" 'http://localhost:8080/audit-service/api/v1/chain/verify?fromSeq=1&toSeq=2'
 ```
 
 `fromSeq` must be ≥ 1 and ≤ `toSeq`, or you get `400 invalid_request`.
@@ -495,8 +518,8 @@ A nested object that would become `{}` after the last child is removed is pruned
 does not treat that empty object as a new uncommitted field. Array elements are replaced with
 `null` rather than removed, so later indexes keep their paths.
 
-This endpoint is open (auth is out of scope). In production it must be separately authorized, and
-the call itself should be audited.
+This endpoint is separately authorized (`ROLE_REDACT`). The call itself is written to the chain as
+`audit.redaction` with `actorId` set to the API client name.
 
 **Request body**
 
@@ -505,7 +528,7 @@ the call itself should be audited.
 | `paths` | yes | JSON Pointers, e.g. `["/account/number"]`. A parent path redacts every nested leaf |
 
 ```bash
-curl -sS http://localhost:8080/audit-service/api/v1/audit-events/1/redactions \
+curl -sS -H "X-API-Key: $API_KEY" http://localhost:8080/audit-service/api/v1/audit-events/1/redactions \
   -H 'Content-Type: application/json' \
   -d '{"paths": ["/account/number"]}'
 ```
@@ -530,8 +553,8 @@ curl -sS http://localhost:8080/audit-service/api/v1/audit-events/1/redactions \
 records whose `recordedAt` is older than that are eligible for archival. Default is 365.
 
 ```bash
-curl -sS http://localhost:8080/audit-service/api/v1/retention/policy
-curl -sS -X PUT http://localhost:8080/audit-service/api/v1/retention/policy \
+curl -sS -H "X-API-Key: $API_KEY" http://localhost:8080/audit-service/api/v1/retention/policy
+curl -sS -X PUT -H "X-API-Key: $API_KEY" http://localhost:8080/audit-service/api/v1/retention/policy \
   -H 'Content-Type: application/json' \
   -d '{"retainDays": 90}'
 ```
@@ -548,7 +571,7 @@ This is the only supported way to forget payload data for retention. `DELETE FRO
 detected as `UNAUTHORIZED_ARCHIVE`.
 
 ```bash
-curl -sS -X POST http://localhost:8080/audit-service/api/v1/retention/apply
+curl -sS -X POST -H "X-API-Key: $API_KEY" http://localhost:8080/audit-service/api/v1/retention/apply
 ```
 
 **Success (`200`).** `{ "archivedCount": 3, "retainDays": 90, "cutoff": "..." }`.
@@ -562,7 +585,7 @@ manifest over `(seq, contentHash, chainHash)` with domain tag `0x06`, stores met
 returns a JSON bundle a recipient can verify without this service.
 
 ```bash
-curl -sS http://localhost:8080/audit-service/api/v1/exports \
+curl -sS -H "X-API-Key: $API_KEY" http://localhost:8080/audit-service/api/v1/exports \
   -H 'Content-Type: application/json' \
   -d '{"fromSeq": 1, "toSeq": 2}' \
   -o bundle.json
@@ -597,10 +620,11 @@ The verifier depends only on `audit-hashing-core`.
 - volume: total events and counts by `eventType`
 
 ```bash
-curl -sS http://localhost:8080/audit-service/api/v1/compliance/report
+curl -sS -H "X-API-Key: $API_KEY" http://localhost:8080/audit-service/api/v1/compliance/report
 ```
 
-Authentication is still out of scope: this endpoint is open.
+Requires `ROLE_COMPLIANCE`. Privileged writes elsewhere on the chain (`audit.redaction`,
+`audit.retention.*`, `audit.export.*`) show up in `volume.byEventType`.
 
 ---
 
@@ -618,7 +642,8 @@ Failures (except a raw framework 404 outside the context root) look like:
 }
 ```
 
-`details` is omitted when empty.
+`details` is omitted when empty. `401 unauthorized` is a missing or unknown API key.
+`403 forbidden` is a known key without the role for that path.
 
 ---
 
@@ -628,12 +653,13 @@ Run these in order against an empty `auditlog` database (or a fresh Compose volu
 
 ```bash
 BASE=http://localhost:8080/audit-service/api
+API_KEY=dev-local-key
 
 # 1. Alive?
 curl -sS "$BASE/actuator/health"
 
 # 2. Write two events
-curl -sS "$BASE/v1/audit-events" -H 'Content-Type: application/json' -d '{
+curl -sS -H "X-API-Key: $API_KEY" "$BASE/v1/audit-events" -H 'Content-Type: application/json' -d '{
   "eventType": "account.updated",
   "actorId": "user-1",
   "resourceType": "account",
@@ -642,7 +668,7 @@ curl -sS "$BASE/v1/audit-events" -H 'Content-Type: application/json' -d '{
   "payload": {"amount": 100, "currency": "USD"}
 }'
 
-curl -sS "$BASE/v1/audit-events" -H 'Content-Type: application/json' -d '{
+curl -sS -H "X-API-Key: $API_KEY" "$BASE/v1/audit-events" -H 'Content-Type: application/json' -d '{
   "eventType": "account.updated",
   "actorId": "user-2",
   "resourceType": "account",
@@ -652,25 +678,25 @@ curl -sS "$BASE/v1/audit-events" -H 'Content-Type: application/json' -d '{
 }'
 
 # 3. List newest first
-curl -sS "$BASE/v1/audit-events?limit=50"
+curl -sS -H "X-API-Key: $API_KEY" "$BASE/v1/audit-events?limit=50"
 
 # 4. Full record + commitments for seq 1
-curl -sS "$BASE/v1/audit-events/1"
+curl -sS -H "X-API-Key: $API_KEY" "$BASE/v1/audit-events/1"
 
 # 5. Chain should be intact
-curl -sS "$BASE/v1/chain/verify"
+curl -sS -H "X-API-Key: $API_KEY" "$BASE/v1/chain/verify"
 
 # 6. Redact one field; hashes stay the same
-curl -sS "$BASE/v1/audit-events/1/redactions" -H 'Content-Type: application/json' \
+curl -sS -H "X-API-Key: $API_KEY" "$BASE/v1/audit-events/1/redactions" -H 'Content-Type: application/json' \
   -d '{"paths":["/amount"]}'
 
 # 7. Export seq 1-2 and verify offline (after mvn -pl audit-verifier-cli -am package)
-curl -sS "$BASE/v1/exports" -H 'Content-Type: application/json' \
+curl -sS -H "X-API-Key: $API_KEY" "$BASE/v1/exports" -H 'Content-Type: application/json' \
   -d '{"fromSeq":1,"toSeq":2}' -o bundle.json
 java -jar audit-verifier-cli/target/audit-verifier.jar bundle.json
 
 # 8. Compliance snapshot
-curl -sS "$BASE/v1/compliance/report"
+curl -sS -H "X-API-Key: $API_KEY" "$BASE/v1/compliance/report"
 ```
 
 ---
@@ -678,4 +704,4 @@ curl -sS "$BASE/v1/compliance/report"
 ## 6. Not implemented yet
 
 - Signed checkpoints (a rewritten tail can still pass verify)
-- Authentication / authorization
+- A public API for creating and rotating API keys (seed via `AUDIT_BOOTSTRAP_API_KEY` or insert into `api_client`)

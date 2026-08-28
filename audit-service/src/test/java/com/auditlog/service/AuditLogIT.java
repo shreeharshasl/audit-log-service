@@ -260,6 +260,60 @@ class AuditLogIT {
     }
 
     @Test
+    @DisplayName("a missing sequence is not found")
+    void missingSequenceIsNotFound() throws Exception {
+        mockMvc.perform(apiGet("/v1/audit-events/{seq}", 99)).andExpect(status().isNotFound());
+    }
+
+    @Test
+    @DisplayName("an unknown API path is not found")
+    void unknownPathIsNotFound() throws Exception {
+        mockMvc.perform(apiGet("/v1/does-not-exist")).andExpect(status().isNotFound());
+    }
+
+    @Test
+    @DisplayName("verify can be limited to an explicit sequence range")
+    void verifyAcceptsAnExplicitRange() throws Exception {
+        append("user-1", "{\"amount\":1}");
+        append("user-2", "{\"amount\":2}");
+
+        JsonNode result = objectMapper.readTree(
+                mockMvc.perform(apiGet("/v1/chain/verify").param("fromSeq", "1").param("toSeq", "1"))
+                        .andExpect(status().isOk())
+                        .andReturn()
+                        .getResponse()
+                        .getContentAsString());
+
+        assertThat(result.get("intact").asBoolean()).isTrue();
+        assertThat(result.get("recordsChecked").asInt()).isEqualTo(1);
+        assertThat(result.get("toSeq").asLong()).isEqualTo(1L);
+    }
+
+    @Test
+    @DisplayName("fromSeq below 1 is rejected")
+    void verifyRejectsFromSeqBelowOne() throws Exception {
+        mockMvc.perform(apiGet("/v1/chain/verify").param("fromSeq", "0")).andExpect(status().isBadRequest());
+    }
+
+    @Test
+    @DisplayName("a non-positive page size falls back to the default")
+    void nonPositiveLimitUsesDefaultPageSize() throws Exception {
+        append("user-1", "{\"amount\":1}");
+
+        JsonNode page = list("limit", "0");
+        assertThat(page.get("items")).hasSize(1);
+    }
+
+    @Test
+    @DisplayName("a blank actor filter is ignored")
+    void blankActorFilterIsIgnored() throws Exception {
+        append("user-1", "{\"amount\":1}");
+
+        JsonNode page = list("actorId", "  ");
+        assertThat(page.get("items")).hasSize(1);
+    }
+
+    @Test
     @DisplayName("a resourceId without resourceType is rejected")
     void resourceIdWithoutTypeIsRejected() throws Exception {
         mockMvc.perform(apiGet("/v1/audit-events").param("resourceId", "acc-1")).andExpect(status().isBadRequest());
@@ -336,11 +390,11 @@ class AuditLogIT {
     }
 
     private static MockHttpServletRequestBuilder apiGet(String path, Object... uriVars) {
-        return get(CONTEXT + path, uriVars).contextPath(CONTEXT);
+        return TestApiAuth.withKey(get(CONTEXT + path, uriVars).contextPath(CONTEXT));
     }
 
     private static MockHttpServletRequestBuilder apiPost(String path) {
-        return post(CONTEXT + path).contextPath(CONTEXT);
+        return TestApiAuth.withKey(post(CONTEXT + path).contextPath(CONTEXT));
     }
 
     private static List<String> violationTypesAt(JsonNode result, long seq) {

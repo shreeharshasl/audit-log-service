@@ -1,5 +1,6 @@
 package com.auditlog.service.config;
 
+import java.security.SecureRandom;
 import java.time.Clock;
 
 import org.springframework.boot.autoconfigure.jackson.Jackson2ObjectMapperBuilderCustomizer;
@@ -8,6 +9,7 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
 import com.auditlog.hashing.PayloadCommitter;
+import com.auditlog.hashing.PayloadFlattener;
 import com.fasterxml.jackson.core.JsonParser;
 
 @Configuration
@@ -16,7 +18,7 @@ public class AuditConfig {
 
     @Bean
     public PayloadCommitter payloadCommitter(AuditProperties properties) {
-        return new PayloadCommitter(properties.payload().toLimits());
+        return new PayloadCommitter(new PayloadFlattener(properties.payload().toLimits()), new SecureRandom());
     }
 
     @Bean

@@ -263,4 +263,67 @@ class PayloadCommitterTest {
 
         assertThat(checks).noneMatch(CommitmentCheck::isViolation);
     }
+
+    @Test
+    @DisplayName("an empty object with no stored commitments is an uncommitted root, not a redaction")
+    void emptyObjectWithoutCommitmentsIsUncommitted() {
+        List<CommitmentCheck> checks = committer.verify(CanonicalJson.parse("{}"), List.of());
+
+        assertThat(checks).singleElement().satisfies(c -> {
+            assertThat(c.path()).isEmpty();
+            assertThat(c.status()).isEqualTo(Status.UNCOMMITTED_FIELD);
+        });
+    }
+
+    @Test
+    @DisplayName("an empty object still holding live commitments is missing values, not fully redacted")
+    void emptyObjectWithLiveCommitmentsIsNotFullyRedacted() {
+        CommittedPayload committed = committer.commit(payload());
+
+        List<CommitmentCheck> checks = committer.verify(CanonicalJson.parse("{}"), committed.fields());
+
+        assertThat(checks).filteredOn(CommitmentCheck::isViolation).isNotEmpty();
+        assertThat(checks)
+                .filteredOn(c -> c.status() == Status.MISSING_FROM_PAYLOAD)
+                .hasSize(3);
+    }
+
+    @Test
+    @DisplayName("an empty object that was never a committed child is an uncommitted field")
+    void leftoverEmptyObjectWithoutStoredChildrenIsUncommitted() {
+        CommittedPayload committed = committer.commit(CanonicalJson.parse("{\"a\":1}"));
+        JsonNode withEmpty = CanonicalJson.parse("{\"a\":1,\"meta\":{}}");
+
+        List<CommitmentCheck> checks = committer.verify(withEmpty, committed.fields());
+
+        assertThat(checks)
+                .filteredOn(c -> c.path().equals("/meta"))
+                .singleElement()
+                .satisfies(c -> assertThat(c.status()).isEqualTo(Status.UNCOMMITTED_FIELD));
+    }
+
+    @Test
+    @DisplayName("a non-object payload cannot be treated as a fully redacted empty object")
+    void nonObjectPayloadIsNotFullyRedacted() {
+        CommittedPayload committed = committer.commit(payload());
+        List<FieldCommitment> redacted =
+                committed.fields().stream().map(FieldCommitment::redact).toList();
+
+        assertThatThrownBy(() -> committer.verify(CanonicalJson.parse("[1]"), redacted))
+                .isInstanceOf(CanonicalJsonException.class);
+    }
+
+    @Test
+    @DisplayName("an uncommitted empty array is a new field, not redaction residue")
+    void uncommittedEmptyArrayIsNotResidue() {
+        CommittedPayload committed = committer.commit(CanonicalJson.parse("{\"a\":1}"));
+        JsonNode withEmpty = CanonicalJson.parse("{\"a\":1,\"tags\":[]}");
+
+        List<CommitmentCheck> checks = committer.verify(withEmpty, committed.fields());
+
+        assertThat(checks)
+                .filteredOn(c -> c.path().equals("/tags"))
+                .singleElement()
+                .satisfies(c -> assertThat(c.status()).isEqualTo(Status.UNCOMMITTED_FIELD));
+    }
 }

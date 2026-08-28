@@ -157,6 +157,31 @@ class BundleVerifierTest {
     }
 
     @Test
+    @DisplayName("a record stored under a different hash version is reported at that sequence")
+    void recordHashVersionMismatchIsDetected() {
+        ExportedRecord honest = ExportTestRecords.record(1, HashFormat.GENESIS_CHAIN_HASH, "{\"amount\":100}");
+        ExportedRecord wrongVersion = new ExportedRecord(
+                honest.seq(),
+                honest.header(),
+                honest.canonicalPayload(),
+                honest.payloadRootHex(),
+                honest.contentHashHex(),
+                honest.previousChainHashHex(),
+                honest.chainHashHex(),
+                99,
+                honest.archived(),
+                honest.commitments());
+
+        BundleVerifier.Result result = verifier.verify(ExportTestRecords.bundle(wrongVersion));
+
+        assertThat(result.intact()).isFalse();
+        assertThat(result.checks())
+                .filteredOn(check -> check.type() == BundleVerifier.Check.Type.HASH_VERSION_MISMATCH)
+                .singleElement()
+                .satisfies(check -> assertThat(check.seq()).isEqualTo(1));
+    }
+
+    @Test
     @DisplayName("a slice that does not include seq 1 cannot check the genesis link and still verifies")
     void rangeNotStartingAtGenesisSkipsPredecessorCheck() {
         ExportedRecord first = ExportTestRecords.record(1, HashFormat.GENESIS_CHAIN_HASH, "{\"amount\":100}");
