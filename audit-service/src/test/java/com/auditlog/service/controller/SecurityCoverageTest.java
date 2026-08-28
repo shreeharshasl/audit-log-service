@@ -25,6 +25,8 @@ import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.authentication.AnonymousAuthenticationToken;
 import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.AuthenticationException;
 import org.springframework.security.core.authority.AuthorityUtils;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.web.AuthenticationEntryPoint;
@@ -122,10 +124,29 @@ class SecurityCoverageTest {
         assertThat(ApiKeyAuthenticationFilter.extractKey(request)).isEqualTo("from-header");
     }
 
+    @Test
+    @DisplayName("Bearer tokens are treated as API keys")
     void bearerTokenIsExtracted() {
         MockHttpServletRequest request = new MockHttpServletRequest();
         request.addHeader("Authorization", "Bearer secret-key");
         assertThat(ApiKeyAuthenticationFilter.extractKey(request)).isEqualTo("secret-key");
+    }
+
+    @Test
+    @DisplayName("a blank X-API-Key falls through to Bearer")
+    void blankHeaderFallsThroughToBearer() {
+        MockHttpServletRequest request = new MockHttpServletRequest();
+        request.addHeader(ApiKeyAuthenticationFilter.HEADER, "  ");
+        request.addHeader("Authorization", "Bearer from-bearer");
+        assertThat(ApiKeyAuthenticationFilter.extractKey(request)).isEqualTo("from-bearer");
+    }
+
+    @Test
+    @DisplayName("a non-Bearer Authorization header is ignored")
+    void nonBearerAuthorizationIsIgnored() {
+        MockHttpServletRequest request = new MockHttpServletRequest();
+        request.addHeader("Authorization", "Basic abc");
+        assertThat(ApiKeyAuthenticationFilter.extractKey(request)).isNull();
     }
 
     @Test
@@ -173,6 +194,20 @@ class SecurityCoverageTest {
     }
 
     @Test
+    @DisplayName("an unauthenticated token does not skip API key lookup")
+    void unauthenticatedTokenDoesNotSkipLookup() throws Exception {
+        SecurityContextHolder.getContext()
+                .setAuthentication(UsernamePasswordAuthenticationToken.unauthenticated("x", "y"));
+        ApiClientService clients = mock(ApiClientService.class);
+        ApiKeyAuthenticationFilter filter =
+                new ApiKeyAuthenticationFilter(clients, mock(AuthenticationEntryPoint.class));
+
+        filter.doFilter(new MockHttpServletRequest(), new MockHttpServletResponse(), new MockFilterChain());
+
+        verify(clients, never()).authenticate(any());
+    }
+
+    @Test
     @DisplayName("401 and 403 bodies use the API error envelope")
     void jsonHandlersUseApiErrorEnvelope() throws Exception {
         JsonAuthenticationEntryPoint entryPoint = new JsonAuthenticationEntryPoint(mapper);
@@ -190,6 +225,15 @@ class SecurityCoverageTest {
                         .asText())
                 .isEqualTo("authentication is required");
 
+        AuthenticationException silent = mock(AuthenticationException.class);
+        when(silent.getMessage()).thenReturn(null);
+        MockHttpServletResponse unauthorizedNull = new MockHttpServletResponse();
+        entryPoint.commence(new MockHttpServletRequest(), unauthorizedNull, silent);
+        assertThat(mapper.readTree(unauthorizedNull.getContentAsByteArray())
+                        .get("message")
+                        .asText())
+                .isEqualTo("authentication is required");
+
         JsonAccessDeniedHandler denied = new JsonAccessDeniedHandler(mapper);
         MockHttpServletResponse forbidden = new MockHttpServletResponse();
         denied.handle(new MockHttpServletRequest(), forbidden, new AccessDeniedException("no"));
@@ -201,6 +245,16 @@ class SecurityCoverageTest {
     @Test
     @DisplayName("the current client name is the authenticated principal")
     void currentClientNameRequiresAuthentication() {
+        assertThatThrownBy(CurrentApiClient::name).isInstanceOf(IllegalStateException.class);
+
+        SecurityContextHolder.getContext()
+                .setAuthentication(UsernamePasswordAuthenticationToken.unauthenticated("x", "y"));
+        assertThatThrownBy(CurrentApiClient::name).isInstanceOf(IllegalStateException.class);
+
+        Authentication nameless = mock(Authentication.class);
+        when(nameless.isAuthenticated()).thenReturn(true);
+        when(nameless.getName()).thenReturn(null);
+        SecurityContextHolder.getContext().setAuthentication(nameless);
         assertThatThrownBy(CurrentApiClient::name).isInstanceOf(IllegalStateException.class);
 
         SecurityContextHolder.getContext()

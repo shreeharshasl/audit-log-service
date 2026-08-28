@@ -10,6 +10,7 @@ import java.nio.file.Path;
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -132,6 +133,41 @@ class VerifierMainTest {
         Path file = write(temp.resolve("main-bundle.json"), honestRecord());
 
         VerifierMain.main(new String[] {file.toString()});
+    }
+
+    @Test
+    @DisplayName("a failed verify invokes the failure exit with that code")
+    void failedVerifyInvokesFailureExit() {
+        AtomicInteger exited = new AtomicInteger(-1);
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        ByteArrayOutputStream err = new ByteArrayOutputStream();
+
+        VerifierMain.runAndExit(
+                new String[0],
+                new PrintStream(out, true, StandardCharsets.UTF_8),
+                new PrintStream(err, true, StandardCharsets.UTF_8),
+                exited::set);
+
+        assertThat(exited.get()).isEqualTo(2);
+        assertThat(err.toString(StandardCharsets.UTF_8)).contains("usage:");
+    }
+
+    @Test
+    @DisplayName("an honest verify does not invoke the failure exit")
+    void honestVerifyDoesNotInvokeFailureExit() throws Exception {
+        Path file = write(temp.resolve("ok.json"), honestRecord());
+        AtomicInteger exited = new AtomicInteger(-1);
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        ByteArrayOutputStream err = new ByteArrayOutputStream();
+
+        VerifierMain.runAndExit(
+                new String[] {file.toString()},
+                new PrintStream(out, true, StandardCharsets.UTF_8),
+                new PrintStream(err, true, StandardCharsets.UTF_8),
+                exited::set);
+
+        assertThat(exited.get()).isEqualTo(-1);
+        assertThat(out.toString(StandardCharsets.UTF_8)).contains("intact");
     }
 
     private static Path write(Path file, ExportedRecord record) throws Exception {

@@ -173,6 +173,19 @@ class ApiClientServiceTest {
         verify(clients).updateCredentials(eq(id), eq(ApiKeyHasher.hash("secret")), eq(EnumSet.allOf(ApiRole.class)));
     }
 
+    @Test
+    @DisplayName("a disabled bootstrap client with every role is still re-enabled")
+    void disabledBootstrapClientWithAllRolesIsReenabled() {
+        UUID id = UUID.fromString("11111111-1111-1111-1111-111111111111");
+        ApiClient existing =
+                new ApiClient(id, "bootstrap", ApiKeyHasher.hash("secret"), EnumSet.allOf(ApiRole.class), false, NOW);
+        when(clients.findByName("bootstrap")).thenReturn(Optional.of(existing));
+
+        service("secret").ensureBootstrapClient();
+
+        verify(clients).updateCredentials(eq(id), eq(ApiKeyHasher.hash("secret")), eq(EnumSet.allOf(ApiRole.class)));
+    }
+
     private ApiClientService service(String bootstrapKey) {
         AuditProperties properties = new AuditProperties(
                 new AuditProperties.Payload(8, 256, 65536, 8192),
